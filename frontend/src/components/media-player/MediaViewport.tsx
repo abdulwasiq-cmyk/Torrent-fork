@@ -1,9 +1,10 @@
 import { Music } from 'lucide-react';
 import { API_BASE } from '../../api/client.ts';
 import type { PanelModel } from './useMediaPlayerModel.tsx';
+import { WebtorEmbed } from './WebtorEmbed.tsx';
 
 export function MediaViewport({ vm }: { vm: PanelModel }) {
-  const { alternateAudioRef, audioRef, file, handleMediaError, isFullscreen, isPlaying, isVideo, mediaError, onLoadedMetadata, onSeeked, onSeeking, onTimeUpdate, selectedSubtitleIndex, setFullscreenControlsVisible, setIsPlaying, setIsSeeking, setTrackNotice, subtitleCueOriginalsRef, subtitleOffset, subtitleTrackRef, subtitleTracks, trackNotice, videoRef } = vm;
+  const { alternateAudioRef, audioRef, file, handleMediaError, isFullscreen, isPlaying, isVideo, mediaError, onLoadedMetadata, onSeeked, onSeeking, onTimeUpdate, providerStatus, selectedSubtitleIndex, setFullscreenControlsVisible, setIsPlaying, setIsSeeking, setTrackNotice, source, subtitleCueOriginalsRef, subtitleOffset, subtitleTrackRef, subtitleTracks, trackNotice, videoRef } = vm;
   return (
     <>
         <div
@@ -21,7 +22,7 @@ export function MediaViewport({ vm }: { vm: PanelModel }) {
               <div className="max-w-md rounded-xl bg-slate-900/95 border border-rose-500/30 p-5">
                 <p className="text-sm font-semibold text-rose-300">{mediaError}</p>
                 <p className="text-xs text-slate-400 mt-2">
-                  The Seedr stream could not be played. We tried the direct Seedr presentation URL and the server proxy.
+                  {source?.provider ? `${source.provider} could not open this media source.` : 'The Seedr stream could not be played. We tried the direct Seedr presentation URL and the server proxy.'}
                 </p>
               </div>
             </div>
@@ -44,7 +45,15 @@ export function MediaViewport({ vm }: { vm: PanelModel }) {
             </div>
           )}
 
-          {isVideo ? (
+          {source?.provider === 'WebTorrent' && providerStatus && (
+            <div role="status" className="absolute bottom-3 left-3 right-3 z-20 rounded-lg bg-slate-950/85 px-3 py-2 text-center text-[11px] text-slate-300">
+              {providerStatus}
+            </div>
+          )}
+
+          {source?.kind === 'webtor' ? (
+            <WebtorEmbed magnet={source.magnet || ''} />
+          ) : isVideo ? (
             <video
               ref={videoRef}
               crossOrigin={file.streamUrl?.startsWith(API_BASE) ? 'anonymous' : undefined}

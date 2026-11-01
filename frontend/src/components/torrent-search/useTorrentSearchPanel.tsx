@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, MovieCatalogueKey, TorrentSearchResult } from '../../api/client.ts';
 import { movieCataloguePageFromSection, movieCatalogueSection, tvCataloguePageFromSectionCache } from '../../api/sectionCache.ts';
 import { setHighQualityPostersReady } from '../MovieCards.tsx';
@@ -36,11 +36,49 @@ import { useTorrentTitleBubble } from './state/useTorrentTitleBubble.ts';
 import { useCancelSearch } from './state/useCancelSearch.ts';
 import { usePosterReadyGate } from './state/usePosterReadyGate.ts';
 import { useYenimePlayer } from './state/useYenimePlayer.ts';
+import { useTorrServerFlow } from './state/useTorrServerFlow.ts';
+import { useWebTorrentFlow } from './state/useWebTorrentFlow.ts';
+import type { TorrentPlaybackResult } from '../media-player/types.ts';
+import { invokeTorrentEngine, type TorrentEngine } from './TorrentEngineMenu.tsx';
 
 const NO_RATINGS: Record<string, undefined> = {};
 
-export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPrepare, onPlaySeedrFile, onOpenProgress, onCancelPrepare }: Pick<TorrentSearchPanelProps, 'onPrepare' | 'onPlaySeedrFile' | 'onOpenProgress' | 'onCancelPrepare'> & Required<Pick<TorrentSearchPanelProps, 'seedrFiles' | 'seedrDeletedFolderIds'>>) {
+export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPrepare, onPlaySeedrFile, onOpenTorrentPlayback, onOpenProgress, onCancelPrepare }: Pick<TorrentSearchPanelProps, 'onPrepare' | 'onPlaySeedrFile' | 'onOpenTorrentPlayback' | 'onOpenProgress' | 'onCancelPrepare'> & Required<Pick<TorrentSearchPanelProps, 'seedrFiles' | 'seedrDeletedFolderIds'>>) {
   const yenime = useYenimePlayer();
+  const torrServer = useTorrServerFlow(onOpenTorrentPlayback);
+  const webTorrent = useWebTorrentFlow(onOpenTorrentPlayback);
+  const [torrentEngineOperation, setTorrentEngineOperation] = useState<{ key: string; engine: TorrentEngine } | null>(null);
+  const [torrentEngineError, setTorrentEngineError] = useState('');
+  const torrentEngineOperationRef = useRef(false);
+  const runTorrentEngine = useCallback(async (engine: TorrentEngine, result: TorrentSearchResult) => {
+    if (torrentEngineOperationRef.current) return;
+    const magnet = String(result.magnetUrl || '').trim();
+    if (!magnet.toLowerCase().startsWith('magnet:?')) {
+      setTorrentEngineError('This result does not include a valid magnet link.');
+      return;
+    }
+
+    torrentEngineOperationRef.current = true;
+    const key = result.infoHash || magnet || result.title;
+    setTorrentEngineOperation({ key, engine });
+    setTorrentEngineError('');
+    try {
+      await invokeTorrentEngine(engine, {
+        torrserver: () => torrServer.playTorrentWithTorrServer(result),
+        webtorrent: () => webTorrent.startWebTorrent(result),
+        webtor: () => onOpenTorrentPlayback?.({
+          provider: 'Webtor',
+          fileName: result.title,
+          source: { provider: 'Webtor', kind: 'webtor', magnet },
+        } satisfies TorrentPlaybackResult),
+      });
+    } catch (engineError) {
+      setTorrentEngineError(engineError instanceof Error ? engineError.message : String(engineError));
+    } finally {
+      torrentEngineOperationRef.current = false;
+      setTorrentEngineOperation(null);
+    }
+  }, [onOpenTorrentPlayback, torrServer.playTorrentWithTorrServer, webTorrent.startWebTorrent]);
   const { query, setQuery, results, setResults, resolutionFilter, setResolutionFilter, sizeSort, setSizeSort, timeSort, setTimeSort, showRecentSearches, setShowRecentSearches, metadataCacheRef, recentSearchRef, searchRequestRef, searchGenerationRef } = useSearchInputState();
   const { nexStreamResults, setNexStreamResults, nexStreamSearchMode, setNexStreamSearchMode, nexStreamLoading, setNexStreamLoading, nexStreamLoadingTitle, setNexStreamLoadingTitle, nexStreamEpisodePrefetchStatus, setNexStreamEpisodePrefetchStatus, nexStreamSearchControllerRef, nexStreamSearchGenerationRef, nexStreamError, setNexStreamError, nexStreamPlayer, setNexStreamPlayer, nexStreamResolvingId, setNexStreamResolvingId, nexStreamEpisodePicker, setNexStreamEpisodePicker, nexStreamSeasons, setNexStreamSeasons, nexStreamEpisodes, setNexStreamEpisodes, nexStreamSelectedSeason, setNexStreamSelectedSeason, nexStreamEpisodesLoading, setNexStreamEpisodesLoading, nexStreamEpisodesError, setNexStreamEpisodesError, nexStreamEpisodesStatus, setNexStreamEpisodesStatus } = useNexStreamState();
   const { searchMetadata, setSearchMetadata, searchMetadataStatus, setSearchMetadataStatus, imdbRatingsByKey, setImdbRatingsByKey, imdbRatingRequestedRef, imdbRetryTick, setImdbRetryTick, imdbInFlightRef, imdbRetryCountRef, tvMetadataRequestedRef, searchAvailabilityByGroup, setSearchAvailabilityByGroup, selectedQualityByGroup, setSelectedQualityByGroup } = useSearchMetadataState();
@@ -784,6 +822,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
   ]);
 
   return {
+    ...torrServer,
     onPlaySeedrFile,
     onOpenProgress,
     onCancelPrepare,
@@ -939,6 +978,10 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
     cancelSearch,
     searchNexStreamTitles,
     ...yenime,
+    ...webTorrent,
+    torrentEngineOperation,
+    torrentEngineError,
+    runTorrentEngine,
     loadNexStreamEpisodes,
     playWithNexStream,
     switchNexStreamProvider,

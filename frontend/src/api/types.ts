@@ -36,6 +36,20 @@ export interface TorrentSearchResult {
   providerLink?: string;
 }
 
+export interface TorrServerFile {
+  id: number;
+  path: string;
+  length: number;
+  streamUrl: string;
+}
+
+export interface TorrServerTorrentInfo {
+  hash: string;
+  title: string;
+  status: string;
+  files: TorrServerFile[];
+}
+
 
 export interface MarvelCatalogueResponse {
   status: 'idle' | 'building' | 'ready' | 'failed';

@@ -3,6 +3,7 @@ import { Check, Copy, Database, Download, Film, Loader2, Play, Users, X } from '
 import type { ImdbRatingResult } from '../api/client.ts';
 import { MovieCatalogueCard } from './MovieCatalogueCard.tsx';
 import { PosterEventHandler, normalizeLowQualityPosterUrl, requestHighQualityPoster, resizeKnownPosterHost } from './movie-cards/posterUpgrade.ts';
+import { defaultMovieCardPlayHandler, TorrentEngineMenu, type TorrentEngine } from './torrent-search/TorrentEngineMenu.tsx';
 
 // Kept here so existing imports of these helpers from MovieCards keep working.
 export { requestHighQualityPoster, setHighQualityPostersReady } from './movie-cards/posterUpgrade.ts';
@@ -268,6 +269,13 @@ export interface MoviePrepareCardProps {
   };
   /** Omitted when NexStream cannot play this title (no button is shown). */
   directStream?: { label: string; disabled: boolean; onClick: () => void };
+  torrentMenu?: {
+    disabled?: boolean;
+    activeEngine?: TorrentEngine | null;
+    status?: string;
+    error?: string;
+    onSelect: (engine: TorrentEngine) => void;
+  };
   /** Omitted when the title has no torrent (no button is shown). */
   prepare?: { isPreparing: boolean; disabled: boolean; onClick: () => void };
   className?: string;
@@ -294,10 +302,12 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
   providers = [],
   prepared,
   directStream,
+  torrentMenu,
   prepare,
   className = '',
 }) => {
   const showImdb = hasImdbRating(imdb);
+  const defaultPlay = defaultMovieCardPlayHandler(prepared, directStream);
   return (
     <div
       className={[
@@ -465,68 +475,87 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
 
               <div className="mt-2 flex items-center justify-between gap-2">
                 {prepared ? (
-                  <div className="min-w-0 max-w-full flex flex-wrap items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      disabled={prepared.isPlaying}
-                      onClick={prepared.onPlay}
-                      className="shrink-0 px-2 py-1.5 rounded-lg bg-emerald-400 text-slate-950 font-bold text-xs hover:bg-emerald-300 transition flex items-center gap-1 disabled:opacity-70 disabled:cursor-wait whitespace-nowrap"
-                      title={prepared.isPlaying ? 'Opening stream…' : 'Play from Seedr'}
-                    >
-                      {prepared.isPlaying
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <Play className="w-3.5 h-3.5" />}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={prepared.onDownload}
-                      className="shrink-0 p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
-                      title="Download file"
-                      aria-label="Download file"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={prepared.isCopied}
-                      onClick={prepared.onCopy}
-                      className="shrink-0 p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition disabled:opacity-60"
-                      title="Copy download link"
-                      aria-label="Copy download link"
-                    >
-                      {prepared.isCopied
-                        ? <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="min-w-0 max-w-full">
-                    <div className="flex w-full items-center justify-between gap-2">
-                      {directStream && (
+                  <div className="min-w-0 w-full">
+                    <div className="flex w-full items-start gap-2">
                       <button
                         type="button"
-                        disabled={directStream.disabled}
-                        onClick={directStream.onClick}
-                        className={(prepare ? 'min-w-0 flex-1' : 'w-full') + ' whitespace-nowrap rounded-lg border border-violet-400/40 bg-violet-500/15 px-1.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-60'}
+                        disabled={prepared.isPlaying || Boolean(torrentMenu?.activeEngine) || !defaultPlay}
+                        onClick={defaultPlay}
+                        className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-400 px-2 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-70"
+                        title={prepared.isPlaying ? 'Opening stream…' : 'Play from Seedr'}
                       >
-                        {directStream.label === 'Resolving…' ? <><Loader2 className="inline-block w-3.5 h-3.5 mr-1 animate-spin" />Resolving…</> : <><Play className="inline-block w-3.5 h-3.5 mr-1 fill-current" />Play</>}
+                        {prepared.isPlaying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                        <span>Play</span>
                       </button>
+                      {torrentMenu && (
+                        <TorrentEngineMenu
+                          disabled={torrentMenu.disabled}
+                          activeEngine={torrentMenu.activeEngine}
+                          status={torrentMenu.status}
+                          error={torrentMenu.error}
+                          onSelect={torrentMenu.onSelect}
+                        />
                       )}
-                      {prepare && (
-                      <div className="shrink-0">
+                    </div>
+                    <div className="mt-1 flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={prepared.onDownload}
+                        className="shrink-0 rounded-lg bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white"
+                        title="Download file"
+                        aria-label="Download file"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={prepared.isCopied}
+                        onClick={prepared.onCopy}
+                        className="shrink-0 rounded-lg bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700 hover:text-cyan-400 disabled:opacity-60"
+                        title="Copy download link"
+                        aria-label="Copy download link"
+                      >
+                        {prepared.isCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="min-w-0 w-full">
+                    <div className="flex w-full items-start gap-2">
+                      <button
+                        type="button"
+                        disabled={Boolean(torrentMenu?.activeEngine) || !directStream || directStream.disabled || !defaultPlay}
+                        onClick={defaultPlay}
+                        title={directStream?.label || 'Direct playback unavailable'}
+                        className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-violet-400/40 bg-violet-500/15 px-2 py-2 text-xs font-bold text-violet-100 hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {directStream?.label === 'Resolving…' || directStream?.label === 'Searching…'
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <Play className="h-3.5 w-3.5 fill-current" />}
+                        <span>Play</span>
+                      </button>
+                      {torrentMenu && (
+                        <TorrentEngineMenu
+                          disabled={torrentMenu.disabled}
+                          activeEngine={torrentMenu.activeEngine}
+                          status={torrentMenu.status}
+                          error={torrentMenu.error}
+                          onSelect={torrentMenu.onSelect}
+                        />
+                      )}
+                    </div>
+                    {prepare && (
+                      <div className="mt-1 flex justify-end">
                         <button
                           type="button"
                           disabled={prepare.disabled}
                           onClick={prepare.onClick}
-                          className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-60 disabled:cursor-not-allowed text-slate-950 text-[11px] font-bold transition"
+                          className="shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {prepare.isPreparing ? 'Preparing…' : 'Prepare'}
+                          {prepare.isPreparing ? 'Preparing…' : 'Prepare with Seedr'}
                         </button>
                       </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 )}
               </div>

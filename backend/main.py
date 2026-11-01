@@ -168,6 +168,7 @@ from metadata.imdb import _get_imdb_rating_record, router as imdb_router
 from routes.feedback import router as feedback_router
 from integrations.nexstream import router as nexstream_router
 from integrations.nexstream_reports import router as nexstream_reports_router
+from integrations.torrserver import router as torrserver_router
 from integrations.vidrift import router as vidrift_router
 from integrations.yenime import router as yenime_router
 
@@ -452,5 +453,6 @@ app.include_router(compat_routes_router)
 app.include_router(feedback_router)
 app.include_router(nexstream_router)
 app.include_router(nexstream_reports_router)
+app.include_router(torrserver_router)
 app.include_router(vidrift_router)
 app.include_router(yenime_router)

@@ -9,7 +9,7 @@ import { MinimizedPlayer } from './media-player/MinimizedPlayer.tsx';
 export const MediaPlayerModal: React.FC<MediaPlayerModalProps> = (props) => {
   const vm = useMediaPlayerModel(props);
   if (!vm) return null;
-  const { isMinimized, isFullscreen, containerRef } = vm;
+  const { isMinimized, isFullscreen, containerRef, source } = vm;
 
 
 
@@ -79,7 +79,7 @@ export const MediaPlayerModal: React.FC<MediaPlayerModalProps> = (props) => {
         <MediaViewport vm={vm} />
 
         {/* Player Controls Bar */}
-        <PlayerControlsBar vm={vm} />
+        {source?.kind !== 'webtor' && <PlayerControlsBar vm={vm} />}
       </div>
 
     </div>

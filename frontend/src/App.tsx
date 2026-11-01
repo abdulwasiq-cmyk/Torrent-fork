@@ -24,7 +24,7 @@ import { ProductWelcomeScreen } from './app/views/ProductWelcomeScreen.tsx';
 
 export default function App() {
   const vm = useAppModel();
-  const { productWelcomeOpen, theme, setSeedrStreamLoadingId, activeMediaFile, setActiveMediaFile, isPlayerMinimized, setIsPlayerMinimized } = vm;
+  const { productWelcomeOpen, theme, setSeedrStreamLoadingId, activeMediaFile, setActiveMediaFile, activeMediaSource, setActiveMediaSource, isPlayerMinimized, setIsPlayerMinimized } = vm;
 
 
 
@@ -120,8 +120,10 @@ export default function App() {
         <Suspense fallback={null}>
         <MediaPlayerModal
           file={activeMediaFile}
+          source={activeMediaSource}
           onClose={() => {
             setActiveMediaFile(null);
+            setActiveMediaSource(null);
             setSeedrStreamLoadingId(null);
           }}
           onPlaybackStarted={() => {

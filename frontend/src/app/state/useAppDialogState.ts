@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { TorrentItem, StorageFile, StorageFolder } from '../../types/index.ts';
+import type { MediaPlayerSource } from '../../components/media-player/types.ts';
 
 export function useAppDialogState() {
   // Modals & Drawers
@@ -28,6 +29,7 @@ export function useAppDialogState() {
   } | null>(null);
   // Media Player State
   const [activeMediaFile, setActiveMediaFile] = useState<StorageFile | null>(null);
+  const [activeMediaSource, setActiveMediaSource] = useState<MediaPlayerSource | null>(null);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
 
   return {
@@ -69,6 +71,8 @@ export function useAppDialogState() {
     setDeleteTarget,
     activeMediaFile,
     setActiveMediaFile,
+    activeMediaSource,
+    setActiveMediaSource,
     isPlayerMinimized,
     setIsPlayerMinimized,
   };

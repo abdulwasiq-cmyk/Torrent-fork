@@ -96,7 +96,7 @@ export function useAppModel() {
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
     );
   }, [currentFolder, seedrAllPrefetchedFiles, files, toSeedrStorageFile, fileTypeFilter, fileSearch]);
-  const { isAddMagnetOpen, setIsAddMagnetOpen, initialMagnet, setInitialMagnet, prioTorrent, setPrioTorrent, isCleanupOpen, setIsCleanupOpen, isNotificationsOpen, setIsNotificationsOpen, feedbackOpen, setFeedbackOpen, feedbackType, setFeedbackType, feedbackRating, setFeedbackRating, feedbackMessage, setFeedbackMessage, feedbackName, setFeedbackName, feedbackSubmitting, setFeedbackSubmitting, feedbackSuccess, setFeedbackSuccess, feedbackError, setFeedbackError, shareFolder, setShareFolder, isCreateFolderOpen, setIsCreateFolderOpen, moveFile, setMoveFile, renameItem, setRenameItem, deleteTarget, setDeleteTarget, activeMediaFile, setActiveMediaFile, isPlayerMinimized, setIsPlayerMinimized } = useAppDialogState();
+  const { isAddMagnetOpen, setIsAddMagnetOpen, initialMagnet, setInitialMagnet, prioTorrent, setPrioTorrent, isCleanupOpen, setIsCleanupOpen, isNotificationsOpen, setIsNotificationsOpen, feedbackOpen, setFeedbackOpen, feedbackType, setFeedbackType, feedbackRating, setFeedbackRating, feedbackMessage, setFeedbackMessage, feedbackName, setFeedbackName, feedbackSubmitting, setFeedbackSubmitting, feedbackSuccess, setFeedbackSuccess, feedbackError, setFeedbackError, shareFolder, setShareFolder, isCreateFolderOpen, setIsCreateFolderOpen, moveFile, setMoveFile, renameItem, setRenameItem, deleteTarget, setDeleteTarget, activeMediaFile, setActiveMediaFile, activeMediaSource, setActiveMediaSource, isPlayerMinimized, setIsPlayerMinimized } = useAppDialogState();
   const { prevTorrentStates, pendingTransferStates } = useTransferRefs();
   // Persist navigation so a browser refresh returns to the same page.
   useEffect(() => {
@@ -243,6 +243,8 @@ export function useAppModel() {
     setDeleteTarget,
     activeMediaFile,
     setActiveMediaFile,
+    activeMediaSource,
+    setActiveMediaSource,
     isPlayerMinimized,
     setIsPlayerMinimized,
     seedrDownloadActive,

@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: torrent-studio:local
-    container_name: torrent-studio
+    container_name: live-torrent-test-app
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-3000}:3000"
@@ -15,12 +15,18 @@ services:
       TMDB_READ_ACCESS_TOKENS: "${TMDB_READ_ACCESS_TOKENS:-}"
       OMDB_API_KEYS: "${OMDB_API_KEYS:-}"
       OMDB_API_KEY: "${OMDB_API_KEY:-}"
+      TORRSERVER_ENABLED: "${TORRSERVER_ENABLED:-false}"
+      TORRSERVER_URL: "${TORRSERVER_URL:-http://live-torrent-test-torrserver:8090}"
+      TORRSERVER_USERNAME: "${TORRSERVER_USERNAME:-}"
+      TORRSERVER_PASSWORD: "${TORRSERVER_PASSWORD:-}"
       MDBLIST_API_KEYS: "${MDBLIST_API_KEYS:-}"
       MDBLIST_API_KEY: "${MDBLIST_API_KEY:-}"
       SEEDR_SESSION_SECRET: "${SEEDR_SESSION_SECRET:?Set SEEDR_SESSION_SECRET in .env}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
     volumes:
       - torrent_studio_data:/app/data
+    networks:
+      - live-torrent-test-net
     healthcheck:
       test:
         - CMD
@@ -34,3 +40,7 @@ services:
 
 volumes:
   torrent_studio_data:
+
+networks:
+  live-torrent-test-net:
+    external: true

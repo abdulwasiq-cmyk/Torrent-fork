@@ -1,10 +1,33 @@
 import { AlertTriangle } from 'lucide-react';
 import { formatBytes } from '../../utils/formatters.ts';
 import { TorrentSearchPanel } from '../../components/TorrentSearchPanel.tsx';
+import type { StorageFile } from '../../types/index.ts';
+import type { TorrentPlaybackResult } from '../../components/media-player/types.ts';
 import type { PanelModel } from '../useAppModel.tsx';
 
 export function TorrentSearchTab({ vm }: { vm: PanelModel }) {
-  const { activeTab, handleAddMagnet, handleCancelSeedrDownload, handleSearchPrepare, handleStreamSeedrFile, seedrAllPrefetchedFiles, seedrDeletedFolderIds, seedrInsufficientSpacePrompt, setActiveTab, setSeedrInsufficientSpacePrompt } = vm;
+  const { activeTab, activeUser, handleAddMagnet, handleCancelSeedrDownload, handleSearchPrepare, handleStreamSeedrFile, seedrAllPrefetchedFiles, seedrDeletedFolderIds, seedrInsufficientSpacePrompt, setActiveMediaFile, setActiveMediaSource, setActiveTab, setIsPlayerMinimized, setSeedrInsufficientSpacePrompt } = vm;
+  const openTorrentPlayback = ({ provider, fileName, fileSize, source }: TorrentPlaybackResult) => {
+    const streamUrl = source.streamUrl || '';
+    const syntheticFile: StorageFile = {
+      id: `${provider.toLowerCase()}-${Date.now()}`,
+      name: fileName,
+      path: fileName,
+      folder: `/${provider}`,
+      size: fileSize || 0,
+      type: 'video',
+      mimeType: 'video/mp4',
+      createdAt: Date.now(),
+      ownerId: activeUser?.id || 'user_admin',
+      ownerName: activeUser?.name || 'Admin',
+      isStreamable: true,
+      downloadUrl: source.downloadUrl || streamUrl,
+      streamUrl,
+    };
+    setActiveMediaFile(syntheticFile);
+    setActiveMediaSource(source);
+    setIsPlayerMinimized(false);
+  };
   return (
     <>
         <div className={activeTab === 'search' ? 'block' : 'hidden'}>
@@ -17,6 +40,7 @@ export function TorrentSearchTab({ vm }: { vm: PanelModel }) {
             seedrFiles={seedrAllPrefetchedFiles}
             seedrDeletedFolderIds={seedrDeletedFolderIds}
             onPlaySeedrFile={handleStreamSeedrFile}
+            onOpenTorrentPlayback={openTorrentPlayback}
           />
 
           {seedrInsufficientSpacePrompt && (

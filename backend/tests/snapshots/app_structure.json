@@ -712,6 +712,41 @@
     [
      "GET"
     ],
+    "/api/torrserver/status",
+    "torrserver_status"
+   ],
+   [
+    [
+     "POST"
+    ],
+    "/api/torrserver/add",
+    "add_torrserver_torrent"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/torrserver/torrents/{torrent_hash}",
+    "get_torrserver_torrent"
+   ],
+   [
+    [
+     "DELETE"
+    ],
+    "/api/torrserver/torrents/{torrent_hash}",
+    "remove_torrserver_torrent"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/torrserver/stream/{torrent_hash}/{file_id}",
+    "stream_torrserver_file"
+   ],
+   [
+    [
+     "GET"
+    ],
     "/api/vidrift/resolve",
     "resolve_vidrift"
    ],
@@ -1465,6 +1500,41 @@
     ],
     "/api/nexstream/report",
     "report_nexstream_failure"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/torrserver/status",
+    "torrserver_status"
+   ],
+   [
+    [
+     "POST"
+    ],
+    "/api/torrserver/add",
+    "add_torrserver_torrent"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/torrserver/torrents/{torrent_hash}",
+    "get_torrserver_torrent"
+   ],
+   [
+    [
+     "DELETE"
+    ],
+    "/api/torrserver/torrents/{torrent_hash}",
+    "remove_torrserver_torrent"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/torrserver/stream/{torrent_hash}/{file_id}",
+    "stream_torrserver_file"
    ],
    [
     [

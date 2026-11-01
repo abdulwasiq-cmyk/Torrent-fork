@@ -11,13 +11,14 @@ import { classicsComparator, ratingValue } from '../classicsSort.ts';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
 import { isAnimeCatalogue } from '../yenime.ts';
 import { tvCataloguePageFromSectionCache } from '../../../api/sectionCache.ts';
+import { TorrentEngineMenu } from '../TorrentEngineMenu.tsx';
 
 export function SearchResultsSection({ vm }: { vm: PanelModel }) {
   const isRegionalTvView = ['hollywood', 'bollywood', 'korean', 'pakistani', 'anime'].includes(vm.activeTopSection || '')
     && vm.regionalContentTabs[vm.activeTopSection as keyof typeof vm.regionalContentTabs] === 'web-series';
   if (isRegionalTvView) return null;
 
-  const { activeTopSection, catalogueExpectedTitles, classicsContentTab, classicsSort, dcWebSeriesCatalogue, dcWebSeriesError, dcWebSeriesLoading, error, expandedSearchGroupKey, franchiseGridPage, franchiseGridPageSize, groupedResults, imdbRatingsByKey, isSearching, loadDcWebSeriesPage, marvelWebSeriesCatalogue, marvelWebSeriesError, marvelWebSeriesLoading, metadataPosterFailed, movieCatalogue, movieTorrentPreviewGroup, nexStreamLoading, nexStreamLoadingTitle, nexStreamResolvingId, nexStreamResults, onPlaySeedrFile, openYenimeRequest, pendingPosterAction, playCatalogueTvWithNexStream, playWithNexStream, playingTorrentKey, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, prepareMovieTorrent, prepareStateFor, preparedActionsFor, preparedForResult, preparingTorrentKey, regionalWebSeriesCatalogue, regionalWebSeriesError, regionalWebSeriesLoading, renderFranchisePagination, results, searchAvailabilityByGroup, searchMetadata, searchMetadataStatus, searchNexStreamTitles, searchPosterUrlsRef, selectedMovieTorrentQualityByGroup, selectedQualityByGroup, setExpandedSearchGroupKey, setMarvelWebSeriesCatalogue, setMarvelWebSeriesError, setMarvelWebSeriesLoading, setMetadataPosterFailed, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setPlayingTorrentKey, setRegionalWebSeriesCatalogue, setRegionalWebSeriesError, setRegionalWebSeriesLoading, setSelectedMovieTorrentQualityByGroup, setSelectedQualityByGroup, showDcWebSeries, showMarvelWebSeries, sortedResults, startPosterBackgroundWorkers } = vm;
+  const { activeTopSection, catalogueExpectedTitles, classicsContentTab, classicsSort, dcWebSeriesCatalogue, dcWebSeriesError, dcWebSeriesLoading, error, expandedSearchGroupKey, franchiseGridPage, franchiseGridPageSize, groupedResults, imdbRatingsByKey, isSearching, loadDcWebSeriesPage, marvelWebSeriesCatalogue, marvelWebSeriesError, marvelWebSeriesLoading, metadataPosterFailed, movieCatalogue, movieTorrentPreviewGroup, nexStreamLoading, nexStreamLoadingTitle, nexStreamResolvingId, nexStreamResults, onPlaySeedrFile, openYenimeRequest, pendingPosterAction, playCatalogueTvWithNexStream, playWithNexStream, playingTorrentKey, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, prepareMovieTorrent, prepareStateFor, preparedActionsFor, preparedForResult, preparingTorrentKey, regionalWebSeriesCatalogue, regionalWebSeriesError, regionalWebSeriesLoading, renderFranchisePagination, results, searchAvailabilityByGroup, searchMetadata, searchMetadataStatus, searchNexStreamTitles, searchPosterUrlsRef, selectedMovieTorrentQualityByGroup, selectedQualityByGroup, setExpandedSearchGroupKey, setMarvelWebSeriesCatalogue, setMarvelWebSeriesError, setMarvelWebSeriesLoading, setMetadataPosterFailed, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setPlayingTorrentKey, setRegionalWebSeriesCatalogue, setRegionalWebSeriesError, setRegionalWebSeriesLoading, setSelectedMovieTorrentQualityByGroup, setSelectedQualityByGroup, showDcWebSeries, showMarvelWebSeries, sortedResults, startPosterBackgroundWorkers, torrServerError, torrServerFileSelection, torrServerSelectingFileId, torrServerSelectingFile, selectTorrServerFile, closeTorrServerFileSelection, webTorrentError, webTorrentFileSelection, webTorrentSelectingFile, webTorrentStatus, selectWebTorrentFile, downloadWebTorrentFile, closeWebTorrentFileSelection, torrentEngineOperation, torrentEngineError, runTorrentEngine } = vm;
   const renderDcWebSeriesPagination = () => {
     if (!dcWebSeriesCatalogue || dcWebSeriesCatalogue.totalPages <= 1) return null;
     const page = dcWebSeriesCatalogue.page;
@@ -32,6 +33,74 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
   };
   return (
     <>
+      {torrServerError && (
+        <div role="alert" className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          TorrServer: {torrServerError}
+        </div>
+      )}
+      {webTorrentError && (
+        <div role="alert" className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          WebTorrent: {webTorrentError}
+        </div>
+      )}
+      {torrentEngineError && (
+        <div role="alert" className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          Torrent engine: {torrentEngineError}
+        </div>
+      )}
+      {torrServerFileSelection && (
+        <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/80 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="torrserver-file-picker-title">
+          <section className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-sky-400/30 bg-slate-950 shadow-2xl">
+            <header className="border-b border-slate-800 px-4 py-3">
+              <h2 id="torrserver-file-picker-title" className="text-sm font-bold text-white">Choose a video file</h2>
+              <p className="mt-1 truncate text-xs text-slate-400">{torrServerFileSelection.title}</p>
+            </header>
+            <div className="min-h-0 divide-y divide-slate-800 overflow-y-auto">
+              {torrServerFileSelection.files.map(file => (
+                <button key={file.id} type="button" disabled={torrServerSelectingFile} onClick={() => void selectTorrServerFile(file)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-900 disabled:opacity-60">
+                  <span className="min-w-0 truncate text-xs text-slate-200">{file.path}</span>
+                  <span className="shrink-0 text-[10px] text-slate-500">{torrServerSelectingFileId === file.id ? 'Opening…' : formatBytes(file.length)}</span>
+                </button>
+              ))}
+            </div>
+            <footer className="border-t border-slate-800 p-3 text-right">
+              <button type="button" disabled={torrServerSelectingFile} onClick={closeTorrServerFileSelection} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50">Cancel</button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {webTorrentFileSelection && (
+        <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/80 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="webtorrent-file-picker-title">
+          <section className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-sky-400/30 bg-slate-950 shadow-2xl">
+            <header className="border-b border-slate-800 px-4 py-3">
+              <h2 id="webtorrent-file-picker-title" className="text-sm font-bold text-white">Choose a torrent file</h2>
+              <p className="mt-1 truncate text-xs text-slate-400">{webTorrentFileSelection.title}</p>
+              <p className="mt-1 text-[10px] text-slate-500">WebTorrent uses browser WebRTC peers; TCP/UDP-only peers are not compatible.</p>
+            </header>
+            {webTorrentStatus && <p role="status" className="px-4 py-2 text-xs text-slate-400">{webTorrentStatus}</p>}
+            <div className="min-h-0 divide-y divide-slate-800 overflow-y-auto">
+              {webTorrentFileSelection.files.map((file, index) => {
+                const playable = webTorrentFileSelection.playableFiles.includes(file);
+                return (
+                  <div key={`${file.path || file.name}-${index}`} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <span className="min-w-0 truncate text-xs text-slate-200">{file.path || file.name} <span className="text-slate-500">({formatBytes(file.length)})</span></span>
+                    <span className="flex shrink-0 gap-3 text-xs">
+                      {playable && <button type="button" disabled={webTorrentSelectingFile} onClick={() => void selectWebTorrentFile(file)} className="font-semibold text-sky-300 hover:text-sky-200 disabled:opacity-50">{webTorrentSelectingFile ? 'Opening…' : 'Play'}</button>}
+                      <button type="button" onClick={() => void downloadWebTorrentFile(file)} className="font-semibold text-slate-300 hover:text-white">Download</button>
+                    </span>
+                  </div>
+                );
+              })}
+              {webTorrentFileSelection.playableFiles.length === 0 && (
+                <p className="px-4 py-3 text-xs text-amber-200">No playable video file was found. Other torrent files can still be downloaded.</p>
+              )}
+            </div>
+            <footer className="border-t border-slate-800 p-3 text-right">
+              <button type="button" disabled={webTorrentSelectingFile} onClick={closeWebTorrentFileSelection} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50">Cancel</button>
+            </footer>
+          </section>
+        </div>
+      )}
       {(results.length > 0 || regionalWebSeriesLoading || Boolean(regionalWebSeriesError) || Boolean(regionalWebSeriesCatalogue) || showDcWebSeries || (activeTopSection === 'classics' && classicsContentTab !== null)) && (
         <div className="space-y-2">
           <div className="px-1 text-[11px] text-slate-500">Use the subsection buttons above to switch catalogue views.</div>
@@ -191,12 +260,66 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                      {preparedFiles.length > 0 && primaryFile ? (
-                        <button type="button" onClick={async () => { setPlayingTorrentKey(torrentKey); try { await onPlaySeedrFile?.(primaryFile); } finally { setPlayingTorrentKey(current => current === torrentKey ? null : current); } }} disabled={playingTorrentKey === torrentKey} className="rounded-lg bg-emerald-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">{playingTorrentKey === torrentKey ? 'Opening…' : 'Play'}</button>
-                      ) : (
-                        <button type="button" onClick={() => void prepareMovieTorrent(result)} disabled={!source || isPreparing} className="rounded-lg bg-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-400 disabled:opacity-50">{isPreparing ? 'Preparing…' : 'Prepare'}</button>
-                      )}
-                      <button type="button" disabled={!Number(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id) || nexStreamResolvingId === 'movie:' + String(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id)} onClick={() => { const item = movieTorrentPreviewGroup.posterResult; const tmdbId = Number(item?.tmdbId || item?.id); if (!Number.isInteger(tmdbId) || tmdbId <= 0) { setNexStreamError('This catalogue card has no valid TMDB ID for NexStream.'); return; } void playWithNexStream({ id: tmdbId, title: item.title || movieTorrentPreviewGroup.title, date: item.releaseDate || (item.year ? String(item.year) : ''), overview: item.overview || '', poster: item.posterUrl || null, type: 'movie' }); }} className="rounded-lg border border-violet-400/50 bg-violet-500/15 px-4 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-50">{nexStreamResolvingId?.startsWith('movie:') ? 'Resolving…' : 'NexStream'}</button>
+                      <button
+                        type="button"
+                        disabled={Boolean(torrentEngineOperation) || (preparedFiles.length > 0
+                          ? playingTorrentKey === torrentKey
+                          : !Number(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id) ||
+                            nexStreamResolvingId === 'movie:' + String(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id))}
+                        onClick={() => {
+                          if (preparedFiles.length > 0 && primaryFile) {
+                            void (async () => {
+                              setPlayingTorrentKey(torrentKey);
+                              try {
+                                await onPlaySeedrFile?.(primaryFile);
+                              } finally {
+                                setPlayingTorrentKey(current => current === torrentKey ? null : current);
+                              }
+                            })();
+                            return;
+                          }
+                          const item = movieTorrentPreviewGroup.posterResult;
+                          const tmdbId = Number(item?.tmdbId || item?.id);
+                          if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
+                            setNexStreamError('This catalogue card has no valid TMDB ID for NexStream.');
+                            return;
+                          }
+                          void playWithNexStream({
+                            id: tmdbId,
+                            title: item.title || movieTorrentPreviewGroup.title,
+                            date: item.releaseDate || (item.year ? String(item.year) : ''),
+                            overview: item.overview || '',
+                            poster: item.posterUrl || null,
+                            type: 'movie',
+                          });
+                        }}
+                        className="min-w-0 flex-1 rounded-lg bg-emerald-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60"
+                      >
+                        {preparedFiles.length > 0 && primaryFile
+                          ? playingTorrentKey === torrentKey ? 'Opening…' : 'Play'
+                          : nexStreamResolvingId?.startsWith('movie:') ? 'Resolving…' : 'Play'}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <TorrentEngineMenu
+                          disabled={!result.magnetUrl?.toLowerCase().startsWith('magnet:?') ||
+                            Boolean(torrentEngineOperation || torrServerFileSelection || webTorrentFileSelection)}
+                          activeEngine={torrentEngineOperation?.key === (result.infoHash || result.magnetUrl || result.title)
+                            ? torrentEngineOperation.engine
+                            : undefined}
+                          status={torrentEngineOperation?.key === (result.infoHash || result.magnetUrl || result.title)
+                            ? torrentEngineOperation.engine === 'webtorrent'
+                              ? webTorrentStatus
+                              : torrentEngineOperation.engine === 'torrserver'
+                                ? 'Preparing torrent on TorrServer…'
+                                : 'Opening Webtor player…'
+                            : undefined}
+                          error={torrServerError || webTorrentError || torrentEngineError || undefined}
+                          onSelect={engine => void runTorrentEngine(engine, result)}
+                        />
+                      </div>
+                      {preparedFiles.length > 0 && primaryFile
+                        ? null
+                        : <button type="button" onClick={() => void prepareMovieTorrent(result)} disabled={!source || isPreparing} className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50">{isPreparing ? 'Preparing…' : 'Prepare with Seedr'}</button>}
                     </div>
                   </div>
                 );
@@ -440,6 +563,22 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                         void searchNexStreamTitles(mediaDisplayTitle || group.title, 'movie');
                       }
                     },
+                  }}
+                  torrentMenu={{
+                    disabled: !result.magnetUrl?.toLowerCase().startsWith('magnet:?') ||
+                      Boolean(torrentEngineOperation || torrServerFileSelection || webTorrentFileSelection),
+                    activeEngine: torrentEngineOperation?.key === (result.infoHash || result.magnetUrl || result.title)
+                      ? torrentEngineOperation.engine
+                      : undefined,
+                    status: torrentEngineOperation?.key === (result.infoHash || result.magnetUrl || result.title)
+                      ? torrentEngineOperation.engine === 'webtorrent'
+                        ? webTorrentStatus
+                        : torrentEngineOperation.engine === 'torrserver'
+                          ? 'Preparing torrent on TorrServer…'
+                          : 'Opening Webtor player…'
+                      : undefined,
+                    error: torrServerError || webTorrentError || torrentEngineError || undefined,
+                    onSelect: engine => void runTorrentEngine(engine, result),
                   }}
                 />
               );

@@ -1,4 +1,5 @@
 import { TorrentSearchResult } from '../../api/client.ts';
+import type { TorrentPlaybackResult } from '../media-player/types.ts';
 
 export type SeedrSearchFile = {
   id: string;
@@ -25,4 +26,5 @@ export interface TorrentSearchPanelProps {
   seedrFiles?: SeedrSearchFile[];
   seedrDeletedFolderIds?: string[];
   onPlaySeedrFile?: (file: SeedrSearchFile) => void | Promise<void>;
+  onOpenTorrentPlayback?: (playback: TorrentPlaybackResult) => void | Promise<void>;
 }

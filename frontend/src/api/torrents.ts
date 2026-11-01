@@ -1,7 +1,52 @@
 import type { TorrentItem, TorrentFileItem } from '../types/index.ts';
+import type { TorrServerTorrentInfo } from './types.ts';
 import { API_BASE, apiFetch } from './http.ts';
 
 export const torrentsApi = {
+  async getTorrServerStatus(): Promise<{ enabled: boolean; error?: string }> {
+    const res = await apiFetch('/api/torrserver/status');
+    const body = await res.text();
+    let data: any = null;
+    try { data = body ? JSON.parse(body) : null; } catch {}
+    if (!res.ok) throw new Error(data?.detail || body || `TorrServer status failed (HTTP ${res.status})`);
+    return {
+      enabled: data?.enabled === true,
+      error: typeof data?.error === 'string' ? data.error : undefined,
+    };
+  },
+
+  async addTorrServerTorrent(magnet: string): Promise<TorrServerTorrentInfo> {
+    const res = await apiFetch('/api/torrserver/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ magnet }),
+    });
+    const body = await res.text();
+    let data: any = null;
+    try { data = body ? JSON.parse(body) : null; } catch {}
+    if (!res.ok) throw new Error(data?.detail || body || `TorrServer add failed (HTTP ${res.status})`);
+    return data as TorrServerTorrentInfo;
+  },
+
+  async getTorrServerTorrent(hash: string): Promise<TorrServerTorrentInfo> {
+    const res = await apiFetch(`/api/torrserver/torrents/${encodeURIComponent(hash)}`);
+    const body = await res.text();
+    let data: any = null;
+    try { data = body ? JSON.parse(body) : null; } catch {}
+    if (!res.ok) throw new Error(data?.detail || body || `TorrServer info failed (HTTP ${res.status})`);
+    return data as TorrServerTorrentInfo;
+  },
+
+  async removeTorrServerTorrent(hash: string): Promise<void> {
+    const res = await apiFetch(`/api/torrserver/torrents/${encodeURIComponent(hash)}`, {
+      method: 'DELETE',
+    });
+    const body = await res.text();
+    let data: any = null;
+    try { data = body ? JSON.parse(body) : null; } catch {}
+    if (!res.ok) throw new Error(data?.detail || body || `TorrServer remove failed (HTTP ${res.status})`);
+  },
+
   async getTorrents(filter?: string): Promise<TorrentItem[]> {
     const url = filter ? `/api/v2/torrents/info?filter=${filter}` : '/api/v2/torrents/info';
     const res = await apiFetch(url);

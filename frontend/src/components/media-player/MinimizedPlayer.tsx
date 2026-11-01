@@ -4,7 +4,7 @@ import { formatDuration } from '../../utils/formatters.ts';
 import type { PanelModel } from './useMediaPlayerModel.tsx';
 
 export function MinimizedPlayer({ vm }: { vm: PanelModel }) {
-  const { alternateAudioRef, audioRef, currentTime, duration, file, handleSeek, isMuted, isPlaying, isVideo, onClose, onLoadedMetadata, onSeeked, onSeeking, onTimeUpdate, onToggleMinimize, setIsPlaying, setIsSeeking, setTrackNotice, skip, toggleMute, togglePlay, videoRef } = vm;
+  const { alternateAudioRef, audioRef, currentTime, duration, file, handleSeek, isMuted, isPlaying, isVideo, onClose, onLoadedMetadata, onSeeked, onSeeking, onTimeUpdate, onToggleMinimize, setIsPlaying, setIsSeeking, setTrackNotice, skip, source, toggleMute, togglePlay, videoRef } = vm;
   return (
     <>
       <div className="fixed bottom-16 md:bottom-6 right-4 z-50 w-80 md:w-96 bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-2xl rounded-2xl p-3.5 flex flex-col gap-2">
@@ -41,7 +41,7 @@ export function MinimizedPlayer({ vm }: { vm: PanelModel }) {
           <video
             ref={videoRef}
             crossOrigin={file.streamUrl?.startsWith(API_BASE) ? 'anonymous' : undefined}
-            src={file.streamUrl || file.externalStreamUrl || file.downloadUrl}
+            src={source?.kind === 'webtorrent' ? undefined : file.streamUrl || file.externalStreamUrl || file.downloadUrl}
             className="w-full h-32 object-contain bg-black rounded-lg"
             onTimeUpdate={onTimeUpdate}
             onSeeking={onSeeking}
