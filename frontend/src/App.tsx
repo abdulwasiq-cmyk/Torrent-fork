@@ -9,7 +9,10 @@
 
 
 import { TorrentCard } from './components/TorrentCard.tsx';
-import { MediaPlayerModal } from './components/MediaPlayerModal.tsx';
+import { lazy, Suspense } from 'react';
+
+// The player (and the large hls.js library it uses) loads only when a file is first played.
+const MediaPlayerModal = lazy(() => import('./components/MediaPlayerModal.tsx').then(module => ({ default: module.MediaPlayerModal })));
 import { ActivityLogView } from './components/ActivityLogView.tsx';
 import { useAppModel } from './app/useAppModel.tsx';
 import { SeedrOnboardingModal } from './app/views/SeedrOnboardingModal.tsx';
@@ -113,21 +116,25 @@ export default function App() {
       <MainContent vm={vm} />
 
       {/* Floating Bottom Media Player (when minimized or active) */}
-      <MediaPlayerModal
-        file={activeMediaFile}
-        onClose={() => {
-          setActiveMediaFile(null);
-          setSeedrStreamLoadingId(null);
-        }}
-        onPlaybackStarted={() => {
-          // Stage 1 and stage 2 both end only when the browser actually
-          // starts playback. A fast stream therefore removes the spinner
-          // immediately, while a slow stream keeps it visible.
-          setSeedrStreamLoadingId(null);
-        }}
-        isMinimized={isPlayerMinimized}
-        onToggleMinimize={() => setIsPlayerMinimized(!isPlayerMinimized)}
-      />
+      {activeMediaFile && (
+        <Suspense fallback={null}>
+        <MediaPlayerModal
+          file={activeMediaFile}
+          onClose={() => {
+            setActiveMediaFile(null);
+            setSeedrStreamLoadingId(null);
+          }}
+          onPlaybackStarted={() => {
+            // Stage 1 and stage 2 both end only when the browser actually
+            // starts playback. A fast stream therefore removes the spinner
+            // immediately, while a slow stream keeps it visible.
+            setSeedrStreamLoadingId(null);
+          }}
+          isMinimized={isPlayerMinimized}
+          onToggleMinimize={() => setIsPlayerMinimized(!isPlayerMinimized)}
+        />
+        </Suspense>
+      )}
 
       {/* Mobile Bottom Navigation */}
       <MobileNav vm={vm} />
