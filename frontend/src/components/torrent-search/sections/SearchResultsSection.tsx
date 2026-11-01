@@ -317,9 +317,6 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                           onSelect={engine => void runTorrentEngine(engine, result)}
                         />
                       </div>
-                      {preparedFiles.length > 0 && primaryFile
-                        ? null
-                        : <button type="button" onClick={() => void prepareMovieTorrent(result)} disabled={!source || isPreparing} className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50">{isPreparing ? 'Preparing…' : 'Prepare with Seedr'}</button>}
                     </div>
                   </div>
                 );
