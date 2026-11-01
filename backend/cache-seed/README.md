@@ -115,6 +115,13 @@ git clone https://github.com/wroxtaaar/Torrent-Studio.git ~/ts && cd ~/ts
 crontab -l 2>/dev/null; (crontab -l 2>/dev/null; echo '0 3 * * 1 /home/ubuntu/ts/scripts/vps/refresh_and_publish.sh hollywood-bollywood >> /home/ubuntu/refresh.log 2>&1') | crontab -
 ```
 
+### Automatic schedule
+
+Instead of the crontab line above, `bash scripts/vps/install_schedule.sh` installs systemd timers: weekly
+`hollywood-bollywood` (Monday 03:00) and monthly `franchise` (1st, 04:00). Missed runs happen at the next
+boot, runs never overlap, logs go to `journalctl -u 'torrent-studio-refresh-*'`, and an optional
+`NOTIFY_WEBHOOK=` line in the env file posts a message when a run fails. `--remove` uninstalls it.
+
 Run `scripts/vps/refresh_and_publish.sh publish-only` once to publish the first bundle, and
 `scripts/vps/refresh_and_publish.sh franchise` whenever Marvel/DC/classics need an update.
 The VPS makes only outbound connections, so no domain, certificate or open port is needed.
