@@ -36,6 +36,20 @@ for import_path in (ROOT, BACKEND):
 
 from backend.metadata.imdb import _imdb_rating_cache_key  # noqa: E402
 
+
+_SPLIT_MODULE = None
+
+
+def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Same-title collapse shared with the split script (loaded by path: scripts/ is not a package here)."""
+    global _SPLIT_MODULE
+    if _SPLIT_MODULE is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("split_top_section_caches", Path(__file__).with_name("split_top_section_caches.py"))
+        _SPLIT_MODULE = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_SPLIT_MODULE)
+    return _SPLIT_MODULE.dedupe_rows(rows)
+
 HOME = Path(os.getenv("TS_HOME") or Path.home() / "torrent-studio-refresh")
 SEED = Path(os.getenv("REFRESH_SEED_DIR") or HOME / "seed").resolve()
 API = os.getenv("HOME_API_BASE", "http://127.0.0.1:3000").rstrip("/")
@@ -627,6 +641,15 @@ def refresh_section(
             pending_imdb.append((row, kind, tmdb_id))
 
     counts["imdbFieldsFilled"] = enrich_imdb_batches(pending_imdb, imdb_cache, mode=mode)
+    # Filling in ids can make two rows the same title: collapse them and fix the page counts.
+    counts["duplicatesRemoved"] = 0
+    for node in doc["subsections"].values():
+        if isinstance(node, dict) and isinstance(node.get("results"), list):
+            before = len(node["results"])
+            node["results"] = dedupe_rows([row for row in node["results"] if isinstance(row, dict)])
+            node["totalResults"] = len(node["results"])
+            node["pageCount"] = (len(node["results"]) + 17) // 18
+            counts["duplicatesRemoved"] += before - len(node["results"])
     missing_counts: dict[str, int] = {}
     for subsection, node in doc["subsections"].items():
         if not isinstance(node, dict) or not isinstance(node.get("results"), list):

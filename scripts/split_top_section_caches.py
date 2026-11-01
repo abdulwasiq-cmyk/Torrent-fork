@@ -215,6 +215,44 @@ def has_catalogue_metadata(row: dict[str, Any]) -> bool:
     }
     return bool(markers.intersection(source))
 
+def identity_keys(row: dict[str, Any]) -> set[str]:
+    """Every id a row can be recognised by. Rows with any real id are matched only by ids."""
+    source = row.get("movie") if isinstance(row.get("movie"), dict) else row
+    keys: set[str] = set()
+    imdb = str(source.get("imdbId") or "").strip().lower()
+    if re.fullmatch(r"tt\d+", imdb):
+        keys.add("imdb:" + imdb)
+    tmdb = source.get("tmdbId") or source.get("id")
+    if tmdb not in (None, "") and str(tmdb).isdigit():
+        keys.add("tmdb:" + str(tmdb))
+    if not keys:
+        key = identity(row)
+        if key:
+            keys.add(key)
+    return keys
+
+def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse rows that are the same title (they share an IMDb id, a TMDB id, or -- when neither
+    exists -- title and year). The first occurrence keeps its position; its empty fields are filled
+    from later duplicates. Enrichment can give two rows the same IMDb id after they were merged,
+    so this runs again after every step that adds ids."""
+    owner: dict[str, int] = {}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        keys = identity_keys(row)
+        hit = next((owner[k] for k in keys if k in owner), None)
+        if hit is None:
+            out.append(dict(row))
+            hit = len(out) - 1
+        else:
+            current = out[hit]
+            for field, value in row.items():
+                if current.get(field) in (None, "", [], {}) and value not in (None, "", [], {}):
+                    current[field] = value
+        for key in keys | identity_keys(out[hit]):
+            owner[key] = hit
+    return out
+
 def merge_rows(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], *, metadata: bool) -> list[dict[str, Any]]:
     merged: dict[str, dict[str, Any]] = {}
     order: list[str] = []
@@ -233,7 +271,7 @@ def merge_rows(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], *
             for field, value in clean.items():
                 if current.get(field) in (None, "", [], {}) and value not in (None, "", [], {}):
                     current[field] = value
-    return [merged[k] for k in order]
+    return dedupe_rows([merged[k] for k in order])
 
 def subsection_doc(section: str, previous: Any) -> dict[str, Any]:
     if isinstance(previous, dict) and previous.get("section") == section:

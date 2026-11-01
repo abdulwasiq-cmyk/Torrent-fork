@@ -235,3 +235,37 @@ class MetadataEnrichmentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DedupeRowsTests(unittest.TestCase):
+    def test_rows_sharing_any_id_collapse_and_keep_first_position(self):
+        rows = [
+            {"title": "A", "tmdbId": 1},
+            {"title": "The End of Nowhere", "tmdbId": 10, "imdbId": "tt31157172"},
+            {"title": "B", "tmdbId": 2},
+            # Same film from another source: different TMDB id format but the same IMDb id.
+            {"title": "The End of Nowhere", "tmdbId": 11, "imdbId": "tt31157172", "overview": "x"},
+            # Same film again, only known by its TMDB id.
+            {"title": "A", "tmdbId": 1, "posterUrl": "/a.jpg"},
+        ]
+        out = MODULE.dedupe_rows(rows)
+        self.assertEqual([row["title"] for row in out], ["A", "The End of Nowhere", "B"])
+        self.assertEqual(out[0]["posterUrl"], "/a.jpg")       # empty fields are filled from the duplicate
+        self.assertEqual(out[1]["overview"], "x")
+        self.assertEqual(out[1]["tmdbId"], 10)                # the first row's own values win
+
+    def test_ids_filled_in_later_make_rows_collide(self):
+        # Merged on title+year (no ids yet); enrichment then gives both the same IMDb id.
+        rows = [{"title": "Film", "year": 2020}, {"title": "Film (Hindi)", "year": 2020}]
+        self.assertEqual(len(MODULE.dedupe_rows(rows)), 2)
+        for row in rows:
+            row["imdbId"] = "tt1"
+        self.assertEqual(len(MODULE.dedupe_rows(rows)), 1)
+
+    def test_distinct_ids_with_the_same_title_stay_separate(self):
+        rows = [{"title": "Dune", "year": 2021, "tmdbId": 1}, {"title": "Dune", "year": 2021, "tmdbId": 2}]
+        self.assertEqual(len(MODULE.dedupe_rows(rows)), 2)
+
+    def test_enrich_loads_the_same_dedupe(self):
+        out = ENRICH.dedupe_rows([{"title": "A", "tmdbId": 1}, {"title": "A", "tmdbId": 1}])
+        self.assertEqual(len(out), 1)
