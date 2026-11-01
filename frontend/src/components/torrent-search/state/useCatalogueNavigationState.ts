@@ -23,7 +23,10 @@ export function useCatalogueNavigationState() {
   const [marvelContentTab, setMarvelContentTab] = useState<RegionalContentTab>(null);
   const [classicsContentTab, setClassicsContentTab] = useState<ClassicsContentTab>('movies');
   const [classicsSort, setClassicsSort] = useState<ClassicsSort>(DEFAULT_CLASSICS_SORT);
-  const [catalogueSort, setCatalogueSort] = useState<'popularity' | 'year' | 'rating'>('popularity');
+  const [catalogueSort, setCatalogueSortKey] = useState<'popularity' | 'year' | 'rating'>('popularity');
+  const [catalogueSortDirection, setCatalogueSortDirection] = useState<'desc' | 'asc'>('desc');
+  // Choosing a sort key always starts in its default (newest / highest / most popular first) order.
+  const setCatalogueSort = (key: 'popularity' | 'year' | 'rating') => { setCatalogueSortKey(key); setCatalogueSortDirection('desc'); };
   const [activeFranchiseSearchMode, setActiveFranchiseSearchMode] = useState<CachedFranchiseSearchMode | null>(null);
   const franchisePageRequestRef = useRef<AbortController | null>(null);
   const franchisePageGenerationRef = useRef(0);
@@ -97,6 +100,8 @@ export function useCatalogueNavigationState() {
     setClassicsSort,
     catalogueSort,
     setCatalogueSort,
+    catalogueSortDirection,
+    setCatalogueSortDirection,
     activeFranchiseSearchMode,
     setActiveFranchiseSearchMode,
     franchisePageRequestRef,
