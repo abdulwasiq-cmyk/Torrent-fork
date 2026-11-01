@@ -14,8 +14,8 @@ export type NexStreamEpisodePayload = {
   status?: 'ready' | 'no_seasons' | 'no_episodes';
 };
 
-// Episode metadata is prefetched after TV search results appear. Keep it in a
-// module cache so opening the picker and revisiting a title is usually instant.
+// Episode metadata is fetched when a series card is opened. Keep it in a
+// module cache so revisiting a title is instant.
 export const nexStreamEpisodeCache = new Map<string, NexStreamEpisodePayload>();
 
 export const nexStreamEpisodeRequests = new Map<string, Promise<NexStreamEpisodePayload>>();
@@ -113,43 +113,6 @@ export async function fetchNexStreamEpisodeMetadata(tmdbId: number, season: numb
   } finally {
     nexStreamEpisodeRequests.delete(key);
   }
-}
-
-export function prefetchNexStreamEpisodeMetadata(
-  items: NexStreamTitleLike[],
-  onStatus: (id: number, status: 'loading' | 'ready' | 'error') => void,
-) {
-  const queue = items.slice();
-  let active = 0;
-  const pump = () => {
-    while (active < 3 && queue.length) {
-      const item = queue.shift();
-      if (!item) continue;
-      const key = nexStreamEpisodeCacheKey(item.id, 1);
-      if (nexStreamEpisodeCache.has(key)) {
-        onStatus(item.id, 'ready');
-        continue;
-      }
-      if (nexStreamEpisodeRequests.has(key)) {
-        onStatus(item.id, 'loading');
-        void fetchNexStreamEpisodeMetadata(item.id, 1).then(
-          () => onStatus(item.id, 'ready'),
-          () => onStatus(item.id, 'error'),
-        );
-        continue;
-      }
-      onStatus(item.id, 'loading');
-      active += 1;
-      void fetchNexStreamEpisodeMetadata(item.id, 1).then(
-        () => onStatus(item.id, 'ready'),
-        () => onStatus(item.id, 'error'),
-      ).finally(() => {
-        active -= 1;
-        pump();
-      });
-    }
-  };
-  pump();
 }
 
 export type NexStreamTitleLike = { id: number; type: 'movie' | 'tv' };

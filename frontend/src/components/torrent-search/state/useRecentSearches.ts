@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { isPresetSearchLabel } from '../formatting.tsx';
-import { apiFetchRecent } from '../helpers.ts';
 
 export function useRecentSearches() {
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
@@ -14,29 +13,6 @@ export function useRecentSearches() {
       return [];
     }
   });
-  useEffect(() => {
-    let cancelled = false;
-
-    apiFetchRecent('/api/search/recent')
-      .then(response => response.ok ? response.json() : null)
-      .then(data => {
-        if (cancelled) return;
-        const serverRecents = Array.isArray(data?.searches)
-          ? data.searches.filter((value: unknown): value is string => typeof value === 'string' && !isPresetSearchLabel(value)).slice(0, 7)
-          : [];
-        if (serverRecents.length > 0) {
-          setRecentSearches(serverRecents);
-          try {
-            localStorage.setItem('seedflow_recent_searches', JSON.stringify(serverRecents));
-          } catch {}
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   const saveRecentSearch = (value: string) => {
     const normalized = value.trim();
     if (!normalized) return;
@@ -50,12 +26,6 @@ export function useRecentSearches() {
       try {
         localStorage.setItem('seedflow_recent_searches', JSON.stringify(next));
       } catch {}
-
-      void apiFetchRecent('/api/search/recent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search: normalized })
-      }).catch(() => {});
 
       return next;
     });
