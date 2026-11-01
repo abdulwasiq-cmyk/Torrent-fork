@@ -6,6 +6,7 @@
 #   SKIP_NEW_SOURCES=1 scripts/vps/build_section_caches.sh   # reuse the sources already in the seed
 #   SKIP_ENRICH=1      scripts/vps/build_section_caches.sh   # offline only (split + validate)
 #   SKIP_MAL=1         scripts/vps/build_section_caches.sh   # skip the anime MAL-id lookup step
+#   NEXSTREAM_PROBE=1  scripts/vps/build_section_caches.sh   # also check which titles NexStream can play
 #   SECTION_METADATA_MODE=deep scripts/vps/build_section_caches.sh  # recheck available metadata
 #
 # Needs the app running with provider access (CACHE_ONLY_MODE=false) for the new-sources and enrich steps.
@@ -59,6 +60,11 @@ fi
 if [ "${SKIP_MAL:-0}" != "1" ]; then
   step "4/5 Storing MyAnimeList ids on anime rows (so the deployed app never looks them up live)"
   "$PY" "$REPO_DIR/scripts/add_anime_mal_ids.py"
+fi
+
+if [ "${NEXSTREAM_PROBE:-0}" = "1" ] && [ "${SKIP_ENRICH:-0}" != "1" ]; then
+  step "Checking which titles NexStream can play (slow: about 1 title per second)"
+  "$PY" "$REPO_DIR/scripts/probe_nexstream.py" || echo "NexStream probe did not finish (see above); continuing."
 fi
 
 step "5/5 Validating the section files"
