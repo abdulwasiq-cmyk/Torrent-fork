@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Copy, Database, Download, Film, Loader2, Play, Users, X } from 'lucide-react';
+import { Database, Film, Loader2, Play, Users, X } from 'lucide-react';
 import type { ImdbRatingResult } from '../api/client.ts';
 import { MovieCatalogueCard } from './MovieCatalogueCard.tsx';
 import { PosterEventHandler, normalizeLowQualityPosterUrl, requestHighQualityPoster, resizeKnownPosterHost } from './movie-cards/posterUpgrade.ts';
@@ -497,27 +497,6 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
                         />
                       )}
                     </div>
-                    <div className="mt-1 flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={prepared.onDownload}
-                        className="shrink-0 rounded-lg bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-                        title="Download file"
-                        aria-label="Download file"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={prepared.isCopied}
-                        onClick={prepared.onCopy}
-                        className="shrink-0 rounded-lg bg-slate-800 p-2 text-slate-300 transition hover:bg-slate-700 hover:text-cyan-400 disabled:opacity-60"
-                        title="Copy download link"
-                        aria-label="Copy download link"
-                      >
-                        {prepared.isCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
                   </div>
                 ) : (
                   <div className="min-w-0 w-full">
@@ -544,18 +523,6 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
                         />
                       )}
                     </div>
-                    {prepare && (
-                      <div className="mt-1 flex justify-end">
-                        <button
-                          type="button"
-                          disabled={prepare.disabled}
-                          onClick={prepare.onClick}
-                          className="shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {prepare.isPreparing ? 'Preparing…' : 'Prepare with Seedr'}
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
