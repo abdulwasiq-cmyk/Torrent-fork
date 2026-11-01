@@ -5,6 +5,7 @@
 #   scripts/vps/build_section_caches.sh                 # new-section sources -> split -> enrich -> validate
 #   SKIP_NEW_SOURCES=1 scripts/vps/build_section_caches.sh   # reuse the sources already in the seed
 #   SKIP_ENRICH=1      scripts/vps/build_section_caches.sh   # offline only (split + validate)
+#   SKIP_MAL=1         scripts/vps/build_section_caches.sh   # skip the anime MAL-id lookup step
 #   SECTION_METADATA_MODE=deep scripts/vps/build_section_caches.sh  # recheck available metadata
 #
 # Needs the app running with provider access (CACHE_ONLY_MODE=false) for the new-sources and enrich steps.
@@ -42,20 +43,25 @@ for s in $SECTIONS; do [ -f "$SEED_DIR/$s.json" ] && cp "$SEED_DIR/$s.json" "$BA
 step "Existing section files backed up to $BACKUP"
 
 if [ "${SKIP_NEW_SOURCES:-0}" != "1" ]; then
-  step "1/4 Korean, Pakistani, Anime and Highest Rated source catalogues (metadata only)"
+  step "1/5 Korean, Pakistani, Anime and Highest Rated source catalogues (metadata only)"
   "$PY" "$REPO_DIR/scripts/build_new_sections_cache.py"
 fi
 
-step "2/4 Splitting the sources into one metadata file per top section (offline)"
+step "2/5 Splitting the sources into one metadata file per top section (offline)"
 "$PY" "$REPO_DIR/scripts/split_top_section_caches.py"
 
 if [ "${SKIP_ENRICH:-0}" != "1" ]; then
-  step "3/4 Filling missing IDs, ratings and streaming info (TMDB / IMDb metadata only)"
+  step "3/5 Filling missing IDs, ratings and streaming info (TMDB / IMDb metadata only)"
   "$PY" "$REPO_DIR/scripts/enrich_top_section_metadata.py" \
     --mode "${SECTION_METADATA_MODE:-missing}"
 fi
 
-step "4/4 Validating the section files"
+if [ "${SKIP_MAL:-0}" != "1" ]; then
+  step "4/5 Storing MyAnimeList ids on anime rows (so the deployed app never looks them up live)"
+  "$PY" "$REPO_DIR/scripts/add_anime_mal_ids.py"
+fi
+
+step "5/5 Validating the section files"
 REQUIRE=""; [ "${SKIP_NEW_SOURCES:-0}" = "1" ] || REQUIRE="--require-all"  # with fresh sources every section must exist
 if "$PY" "$REPO_DIR/scripts/validate_section_caches.py" --seed "$SEED_DIR" $REQUIRE; then
   step "Done. Files are in $SEED_DIR (previous versions in $BACKUP). Nothing was published."
