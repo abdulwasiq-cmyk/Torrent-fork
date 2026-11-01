@@ -25,6 +25,10 @@ export function TorrentPlayerShell({ id, title, loading, loadingLabel, closeLabe
   const showControlsTemporarily = React.useCallback(() => {
     setControlsVisible(true);
     if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+    // On touch screens a tap inside the player iframe never reaches this page, so a hidden bar
+    // could not be brought back (and taps on it fell through to the video). Only auto-hide
+    // where a mouse can reveal it again.
+    if (typeof window.matchMedia === 'function' && !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     hideTimerRef.current = window.setTimeout(() => setControlsVisible(false), 3500);
   }, []);
 

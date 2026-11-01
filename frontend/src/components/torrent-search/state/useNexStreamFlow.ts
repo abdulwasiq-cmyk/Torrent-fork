@@ -106,7 +106,7 @@ export function useNexStreamFlow({ nexStreamSearchControllerRef, nexStreamSearch
       if (generation === episodeLoadGenerationRef.current) setNexStreamEpisodesLoading(false);
     }
   };
-  const playWithNexStream = async (item: NexStreamTitle, chosenSeason?: number, chosenEpisode?: number, openInNewWindow = false) => {
+  const playWithNexStream = async (item: NexStreamTitle, chosenSeason?: number, chosenEpisode?: number, openInNewWindow = false, provider: 'vidrift' | 'nexstream' = 'vidrift') => {
     if (!validTmdbId(item.id)) {
       setNexStreamError('This title has no valid TMDB ID for VidRift playback.');
       return;
@@ -129,9 +129,12 @@ export function useNexStreamFlow({ nexStreamSearchControllerRef, nexStreamSearch
     try {
       // VidRift is embed-only: construction does not verify availability.
       const tmdbId = Number(item.id);
-      const sourceUrl = item.type === 'tv'
-        ? buildVidRiftTvUrl(tmdbId, season, episode)
-        : buildVidRiftMovieUrl(tmdbId);
+      const useNexStream = provider === 'nexstream' && !openInNewWindow;
+      const sourceUrl = useNexStream
+        ? await resolveNexStreamUrl(item.type, tmdbId, season, episode)
+        : item.type === 'tv'
+          ? buildVidRiftTvUrl(tmdbId, season, episode)
+          : buildVidRiftMovieUrl(tmdbId);
       if (!sourceUrl) throw new Error('This title has an invalid VidRift playback ID or episode.');
       const popup = openInNewWindow ? window.open('about:blank', '_blank') : null;
       if (popup) {
@@ -142,7 +145,7 @@ export function useNexStreamFlow({ nexStreamSearchControllerRef, nexStreamSearch
         setNexStreamPlayer({
           title: item.title,
           year: String(item.date || '').slice(0, 4),
-          sourceName: 'VidRift',
+          sourceName: useNexStream ? 'NexStream' : 'VidRift',
           url: sourceUrl,
           type: item.type,
           tmdbId,
@@ -157,6 +160,19 @@ export function useNexStreamFlow({ nexStreamSearchControllerRef, nexStreamSearch
     } finally {
       setNexStreamResolvingId(null);
     }
+  };
+  // Ask the server for the NexStream player URL of a movie / episode.
+  const resolveNexStreamUrl = async (type: 'movie' | 'tv', tmdbId: number, season?: number, episode?: number): Promise<string> => {
+    const params = new URLSearchParams({ provider: 'nexstream', type, tmdb_id: String(tmdbId) });
+    if (type === 'tv') {
+      params.set('season', String(season || 1));
+      params.set('episode', String(episode || 1));
+    }
+    const response = await fetch('/api/nexstream/resolve?' + params.toString(), { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+    const data = await response.json().catch(() => ({}));
+    const url = String(data?.sources?.[0]?.url || '');
+    if (!response.ok || !data.success || !url) throw new Error(data?.detail || 'NexStream could not load this title.');
+    return url;
   };
   type NexStreamPlayerState = NonNullable<ReturnType<typeof useNexStreamState>['nexStreamPlayer']>;
   // Switch the open player between the two stream sources for the same title/episode.
@@ -176,15 +192,7 @@ export function useNexStreamFlow({ nexStreamSearchControllerRef, nexStreamSearch
     const resolvingId = 'switch:' + player.type + ':' + tmdbId;
     setNexStreamResolvingId(resolvingId);
     try {
-      const params = new URLSearchParams({ provider: 'nexstream', type: player.type, tmdb_id: String(tmdbId) });
-      if (player.type === 'tv') {
-        params.set('season', String(player.season || 1));
-        params.set('episode', String(player.episode || 1));
-      }
-      const response = await fetch('/api/nexstream/resolve?' + params.toString(), { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-      const data = await response.json().catch(() => ({}));
-      const url = String(data?.sources?.[0]?.url || '');
-      if (!response.ok || !data.success || !url) throw new Error(data?.detail || 'NexStream could not load this title.');
+      const url = await resolveNexStreamUrl(player.type, tmdbId, player.season, player.episode);
       setNexStreamPlayer({ ...player, sourceName: 'NexStream', url });
     } catch (error: any) {
       setNexStreamError(String(error?.message || 'NexStream could not load this title.'));
