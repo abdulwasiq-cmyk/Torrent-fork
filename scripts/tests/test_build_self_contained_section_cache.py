@@ -6,6 +6,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "build_self_contained_section_cache.py"
@@ -418,12 +419,13 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                     )
                 raise AssertionError(f"Unexpected publisher command: {command}")
 
-            uploaded_assets = PUBLISH_MODULE.publish_cache_bundle(
-                output / "cache-bundle.json",
-                output / "cache-bundle.tar.gz",
-                "wroxtaaar/Torrent-Studio",
-                runner=fake_runner,
-            )
+            with patch.object(PUBLISH_MODULE, "advance_pointer", return_value="test-commit"):
+                uploaded_assets = PUBLISH_MODULE.publish_cache_bundle(
+                    output / "cache-bundle.json",
+                    output / "cache-bundle.tar.gz",
+                    "wroxtaaar/Torrent-Studio",
+                    runner=fake_runner,
+                )
             immutable_upload = next(
                 call for call in calls
                 if call[:3] == ["gh", "release", "upload"] and "--clobber" not in call
@@ -468,12 +470,13 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                     )
                 raise AssertionError(f"Unexpected publisher command: {command}")
 
-            result = PUBLISH_MODULE.publish_cache_bundle(
-                manifest_path,
-                output / "cache-bundle.tar.gz",
-                "wroxtaaar/Torrent-Studio",
-                runner=fake_runner,
-            )
+            with patch.object(PUBLISH_MODULE, "advance_pointer", return_value="test-commit"):
+                result = PUBLISH_MODULE.publish_cache_bundle(
+                    manifest_path,
+                    output / "cache-bundle.tar.gz",
+                    "wroxtaaar/Torrent-Studio",
+                    runner=fake_runner,
+                )
 
             immutable_uploads = [
                 call for call in calls
