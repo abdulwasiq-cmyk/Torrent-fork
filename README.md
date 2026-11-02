@@ -27,7 +27,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 Optional integrations can use `TMDB_READ_ACCESS_TOKEN` / `TMDB_API_KEY`, `WATCHMODE_API_KEY`, `OMDB_API_KEY`, and `NEXSTREAM_API_KEY`. Add credentials in Render's environment settings—never commit secrets.
 
-Cache bundles are fetched independently: immutable archives live on the `cache-data` release, while their rolling metadata and torrent pointers live at `cache-bundles/metadata.json` and `cache-bundles/torrent.json` on the `cache-manifests` branch. Publish both bundle domains before rolling out an image that uses these pointers; clean deployments otherwise use their bundled seeds. Torrent files are installed as validated generations under `/app/data/torrent-cache/`, with `current` switched atomically and prior generations retained for recovery.
+Cache bundles are fetched independently: immutable archives live on the `cache-data` release, while their rolling metadata and torrent pointers live at `cache-bundles/metadata.json` and `cache-bundles/torrent.json` on the `cache-manifests` branch. Publish both bundle domains before rolling out an image that uses these pointers; clean deployments otherwise use their bundled seeds. If a pointer is lost, restore it from the matching uploaded release manifest and immutable asset—do not rebuild or overwrite the cache archive just to recreate the pointer. Torrent files are installed as validated generations under `/app/data/torrent-cache/`, with `current` switched atomically and prior generations retained for recovery.
 
 ## Run locally with Docker
 
