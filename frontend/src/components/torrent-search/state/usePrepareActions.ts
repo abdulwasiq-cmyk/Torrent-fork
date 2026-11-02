@@ -33,7 +33,7 @@ export function usePrepareActions({ preparedByKeyRef, preparingTorrentKey, setPr
     return localFiles.length ? localFiles : findPreparedFiles(result);
   };
   const prepareMovieTorrent = async (result: TorrentSearchResult) => {
-    const source = result.magnetUrl || result.downloadUrl || result.sourceUrl;
+    const source = result.magnetUrl || result.downloadUrl || result.sourceUrl || result.infoHash || result.infoUrl;
     const torrentKey = result.infoHash || source || result.title;
     if (!source || preparingTorrentKey === torrentKey) return;
 
@@ -74,7 +74,7 @@ export function usePrepareActions({ preparedByKeyRef, preparingTorrentKey, setPr
   // Everything the shared movie cards need to know about one torrent result.
   // Used by every movie section so Prepare / Play / Download / Copy behave the same.
   const prepareStateFor = (result: TorrentSearchResult) => {
-    const source = result.magnetUrl || result.downloadUrl || result.sourceUrl;
+    const source = result.magnetUrl || result.downloadUrl || result.sourceUrl || result.infoHash || result.infoUrl;
     const torrentKey = result.infoHash || source || result.title;
     const preparedFiles = preparedForResult(result);
     const primaryFile = preparedFiles.find(file => PLAYABLE_FILE_PATTERN.test(file.name)) || preparedFiles[0];
