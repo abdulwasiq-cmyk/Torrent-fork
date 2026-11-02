@@ -174,6 +174,18 @@ def test_docker_fetches_torrent_bundle_before_starting_api():
     assert dockerfile.index(torrent_fetch) < dockerfile.index(api_start)
 
 
+def test_vps_deployment_recreates_app_and_uses_bounded_health_checks():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    deploy_job = workflow.split("deploy-vps:", maxsplit=1)[1]
+
+    assert "docker compose up -d --build --force-recreate torrent-studio" in deploy_job
+    assert "deadline=$((SECONDS + 240))" in deploy_job
+    assert 'if [ "$remaining" -le 0 ]; then' in deploy_job
+    assert "curl --connect-timeout 3 --max-time \"$request_timeout\" -fsS" in deploy_job
+    assert "docker compose ps" in deploy_job
+    assert "docker compose logs --tail=100 torrent-studio" in deploy_job
+
+
 def _write_fixture_cache(seed_dir: Path, generation: int = 1) -> dict[str, dict]:
     seed_dir.mkdir(parents=True, exist_ok=True)
     files = {}
