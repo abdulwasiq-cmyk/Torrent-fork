@@ -1,10 +1,7 @@
-import React, { StrictMode, Component, ReactNode, ErrorInfo, Suspense, lazy } from 'react';
+import React, { StrictMode, Component, ReactNode, ErrorInfo } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-
-const EngineLab = lazy(() => import('./components/engine-lab/EngineLab.tsx'));
-const showEngineLab = new URLSearchParams(window.location.search).get('lab') === 'engines';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -106,13 +103,7 @@ if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
       <ErrorBoundary>
-        {showEngineLab ? (
-          <Suspense fallback={null}>
-            <EngineLab />
-          </Suspense>
-        ) : (
-          <App />
-        )}
+        <App />
       </ErrorBoundary>
     </StrictMode>
   );

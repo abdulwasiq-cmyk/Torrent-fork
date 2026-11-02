@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Query, Request
 
 from core.cache_diagnostics import _InstrumentedAsyncClient, _record_cache_event
 from catalogues.catalogues_extra import (
@@ -29,7 +29,6 @@ from core.settings import (
     TMDB_OTT_CACHE_FILE,
     TMDB_READ_ACCESS_TOKENS,
     TMDB_SEARCH_METADATA_CACHE_FILE,
-    TORRENT_SEARCH_ENABLED,
     TMDB_SEARCH_METADATA_QUERY_TTL_SECONDS,
     TMDB_SYNOPSIS_LOOKUP_VERSION,
     WATCHMODE_API_KEYS,
@@ -1304,8 +1303,6 @@ async def api_search_metadata_batch(
 
 @router.get("/api/search")
 async def api_search(request: Request, q: str = Query(..., min_length=1), limit: int = Query(50, ge=1, le=50)):
-    if not TORRENT_SEARCH_ENABLED:
-        raise HTTPException(status_code=503, detail="Torrent provider searches are disabled.")
     prepare_intent = request.headers.get("x-prepare-intent", "missing")
     prepare_trace = request.headers.get("x-prepare-trace", "missing")
     if prepare_intent != "missing" or prepare_trace != "missing":

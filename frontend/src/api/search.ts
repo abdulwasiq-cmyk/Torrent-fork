@@ -1,86 +1,9 @@
-import type { TorrentCacheDocument, TorrentSearchResult, MarvelCatalogueResponse, TvCataloguePage, MovieCatalogueKey, SearchMediaMetadata, SearchMediaMetadataResponse, ImdbRatingResult, MovieCataloguePage, MovieOttAvailability, SectionCacheDocument } from './types.ts';
+import type { TorrentSearchResult, MarvelCatalogueResponse, TvCataloguePage, MovieCatalogueKey, SearchMediaMetadata, SearchMediaMetadataResponse, ImdbRatingResult, MovieCataloguePage, MovieOttAvailability, SectionCacheDocument } from './types.ts';
 import { API_BASE, apiFetch } from './http.ts';
 
 const sectionCacheRequests = new Map<string, Promise<SectionCacheDocument>>();
-const torrentMovieCacheRequests = new Map<string, Promise<TorrentCacheDocument>>();
-
-function isTorrentSearchResult(value: unknown): value is TorrentSearchResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.title === 'string' &&
-    typeof record.size === 'number' &&
-    typeof record.seeders === 'number' &&
-    typeof record.leechers === 'number'
-  );
-}
 
 export const searchApi = {
-  async getTorrentMovieCache(
-    section: string,
-    media: { tmdbId?: number | string | null; imdbId?: string | null; title: string; year?: number | string | null },
-    signal?: AbortSignal,
-  ): Promise<TorrentCacheDocument> {
-    const sectionKey = String(section || '').trim().toLowerCase();
-    const params = new URLSearchParams();
-    const tmdbId = media.tmdbId == null ? '' : String(media.tmdbId).trim();
-    const imdbId = String(media.imdbId || '').trim();
-    const title = String(media.title || '').trim();
-    const year = media.year == null ? '' : String(media.year).trim();
-    if (tmdbId) params.set('tmdb_id', tmdbId);
-    if (imdbId) params.set('imdb_id', imdbId);
-    if (title) params.set('title', title);
-    if (year) params.set('year', year);
-    if (!tmdbId && !imdbId && !(title && year)) {
-      throw new Error('A stable movie identifier or title and year are required for cached torrent lookup.');
-    }
-    const key = [sectionKey, params.toString()].join('|');
-    const existing = torrentMovieCacheRequests.get(key);
-    if (existing) return existing;
-    const request = (async () => {
-      const res = await apiFetch(
-        '/api/sections/' + encodeURIComponent(sectionKey) + '/torrent-options?' + params.toString(),
-        { cache: 'no-store', signal },
-      );
-      const body = await res.text();
-      let data: unknown;
-      try {
-        data = body ? JSON.parse(body) : null;
-      } catch {
-        throw new Error('Movie torrent cache response is not valid JSON.');
-      }
-      const record = data && typeof data === 'object' && !Array.isArray(data)
-        ? data as Record<string, unknown>
-        : null;
-      if (!res.ok) {
-        const detail = typeof record?.detail === 'string' ? record.detail : '';
-        throw new Error(detail || body || ('Movie torrent cache failed (HTTP ' + res.status + ')'));
-      }
-      if (
-        !record ||
-        record.schemaVersion !== 1 ||
-        record.section !== sectionKey ||
-        !Array.isArray(record.records) ||
-        !record.records.every(isTorrentSearchResult)
-      ) {
-        throw new Error('Movie torrent cache response has an invalid document shape.');
-      }
-      return {
-        schemaVersion: 1,
-        section: sectionKey,
-        records: record.records,
-      };
-    })();
-    torrentMovieCacheRequests.set(key, request);
-    try {
-      return await request;
-    } finally {
-      if (torrentMovieCacheRequests.get(key) === request) {
-        torrentMovieCacheRequests.delete(key);
-      }
-    }
-  },
-
   async getSectionCache(section: string): Promise<SectionCacheDocument> {
     const key = String(section || '').trim().toLowerCase();
     const existing = sectionCacheRequests.get(key);

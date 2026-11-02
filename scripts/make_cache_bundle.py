@@ -6,7 +6,6 @@
 Pre-splits catalogue pages and self-contains section metadata before packaging.
 """
 import hashlib
-import io
 import json
 import shutil
 import subprocess
@@ -28,61 +27,6 @@ SECTIONS = (
     "anime",
     "favourites",
 )
-TORRENT_RESULT_FIELDS = {
-    "torrentdetails",
-    "torrentmatch",
-    "torrentmatches",
-    "torrentcheckedat",
-    "torrentcheckedatepoch",
-    "torrentlastnomatchat",
-}
-
-
-def _contains_torrent_result(value: Any) -> bool:
-    if isinstance(value, dict):
-        if any(
-            key.casefold() in {
-                "infohash", "magneturl", "torrentdetails", "torrentmatch", "torrentmatches",
-                "seeders", "leechers", "indexer",
-            }
-            for key in value
-        ):
-            return True
-        return any(_contains_torrent_result(child) for child in value.values())
-    if isinstance(value, list):
-        return any(_contains_torrent_result(child) for child in value)
-    return False
-
-
-def _strip_torrent_fields(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {
-            key: _strip_torrent_fields(child)
-            for key, child in value.items()
-            if key.casefold() not in TORRENT_RESULT_FIELDS
-            and not key.casefold().startswith("torrent")
-        }
-    if isinstance(value, list):
-        return [_strip_torrent_fields(child) for child in value]
-    return value
-
-
-def metadata_bundle_bytes(path: Path, relative: Path) -> bytes | None:
-    """Return a metadata-only representation, excluding torrent cache artifacts."""
-    filename = relative.name.casefold()
-    if "torrent" in filename or filename.startswith("torrent-cache-bundle-"):
-        return None
-    content = path.read_bytes()
-    if path.suffix != ".json":
-        return content
-    value: Any = json.loads(content)
-    if relative.as_posix() == "runtime/regional_movie_prebuilt_cache.json":
-        sanitized = _strip_torrent_fields(value)
-        if sanitized != value:
-            return json.dumps(sanitized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    elif _contains_torrent_result(value):
-        return None
-    return content
 
 
 def section_documents_are_valid(seed: Path) -> bool:
@@ -153,17 +97,13 @@ def make_cache_bundle(seed: Path, out: Path) -> dict[str, Any]:
     with tarfile.open(bundle, "w:gz") as tar:
         for path in sorted(seed.rglob("*")):
             relative = path.relative_to(seed)
-            if not path.is_file() or relative.name in ("README.md", ".bundle-version") or "pages.old" in relative.parts:
-                continue
-            content = metadata_bundle_bytes(path, relative)
-            if content is None:
-                continue
-            if path.suffix == ".json":
-                json.loads(content)
-            info = tarfile.TarInfo(relative.as_posix())
-            info.size = len(content)
-            info.mtime = path.stat().st_mtime
-            tar.addfile(info, io.BytesIO(content))
+            if (
+                path.is_file()
+                and relative.name not in ("README.md", ".bundle-version")
+                and "pages.old" not in relative.parts
+            ):
+                json.loads(path.read_bytes()) if path.suffix == ".json" else None
+                tar.add(path, arcname=relative.as_posix())
 
     digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
     version = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + digest[:8]

@@ -1,5 +1,5 @@
 import type { TorrentItem, TorrentFileItem } from '../types/index.ts';
-import { API_BASE, apiFetch, makeSeedrError } from './http.ts';
+import { API_BASE, apiFetch } from './http.ts';
 
 export const torrentsApi = {
   async getTorrents(filter?: string): Promise<TorrentItem[]> {
@@ -224,15 +224,12 @@ export const torrentsApi = {
     try { data = body ? JSON.parse(body) : null; } catch {}
 
     if (!res.ok) {
-      const error = makeSeedrError(
-        data,
-        body,
-        res.status,
-        `Seedr prepare failed (HTTP ${res.status})`,
+      const error = new Error(
+        data?.error || data?.message || data?.detail || body ||
+        `Seedr prepare failed (HTTP ${res.status})`
       );
-      if (res.status === 413 && !error.code) {
-        error.code = 'SEEDR_INSUFFICIENT_SPACE';
-      }
+      Object.assign(error as any, data || {});
+      if (res.status === 413) (error as any).code = data?.code || 'SEEDR_INSUFFICIENT_SPACE';
       throw error;
     }
 
@@ -256,8 +253,7 @@ export const torrentsApi = {
     forceBackend?: 'seedr' | 'qbittorrent',
     selectedNames?: string[],
     seedrTaskId?: number | string,
-    torrentName?: string,
-    requiredBytes?: number
+    torrentName?: string
   ): Promise<any> {
     const magnet = urls;
     if (!magnet.trim().toLowerCase().startsWith('magnet:?')) {
@@ -268,7 +264,7 @@ export const torrentsApi = {
       const res = await apiFetch('/api/seedr/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ magnet, required_bytes: requiredBytes })
+        body: JSON.stringify({ magnet })
       });
 
       const body = await res.text();

@@ -19,8 +19,7 @@ REFRESH_HOME = Path(os.getenv("TS_HOME") or Path.home() / "torrent-studio-refres
 SEED = Path(os.getenv("REFRESH_SEED_DIR") or REFRESH_HOME / "seed").resolve()
 METADATA_PATH = SEED / "hollywood.json"
 LEGACY_PATH = SEED / "latest_hollywood_catalogue.json"
-# Keep this legacy migration export separate from the canonical v1 section cache.
-OUTPUT = SEED / "hollywood-torrent-migration.json"
+OUTPUT = SEED / "hollywood-torrents.json"
 
 
 def read_json(path: Path) -> dict[str, Any]:

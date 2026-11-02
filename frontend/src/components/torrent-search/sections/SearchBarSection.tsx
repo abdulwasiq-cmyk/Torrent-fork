@@ -1,11 +1,10 @@
 import { Search, X } from 'lucide-react';
 import { MarvelFilmFilter, RegionalCatalogueMode, RegionalTvGroup } from '../types.ts';
-import { nextClassicsSort, DEFAULT_CLASSICS_SORT, type ClassicsSortKey } from '../classicsSort.ts';
-import { SortBar } from './SortBar.tsx';
+import { nextClassicsSort, DEFAULT_CLASSICS_SORT } from '../classicsSort.ts';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
 
 export function SearchBarSection({ vm }: { vm: PanelModel }) {
-  const { activeTopSection, catalogueSort, catalogueSortDirection, setCatalogueSortDirection, cancelSearch, classicsContentTab, classicsSort, setClassicsSort, dcContentTab, error, isSearching, loadClassicsTvCatalogue, loadDcWebSeries, loadMarvelWebSeries, marvelContentTab, marvelFilmFilter, marvelWebSeriesCatalogue, movieCatalogue, nexStreamLoading, openMovieCatalogue, openRegionalCatalogue, openRegionalTvCatalogue, query, recentSearchRef, recentSearches, regionalCatalogueModes, regionalContentTabs, regionalTvModes, regionalWebSeriesCatalogue, runSearch, searchNexStreamTitles, selectCachedFranchise, selectHighestRatedSection, setActiveTopSection, setCatalogueSort, setClassicsContentTab, setDcContentTab, setError, setFranchiseGridPage, setMarvelContentTab, setMarvelFilmFilter, setMovieCatalogue, setNexStreamError, setNexStreamSearchMode, setQuery, setRecentSearches, setRegionalContentTabs, setResolutionFilter, setResults, setSearched, setShowDcWebSeries, setShowMarvelWebSeries, setShowRecentSearches, setSizeSort, setTimeSort, showDcWebSeries, showMarvelWebSeries, showRecentSearches, } = vm;
+  const { activeTopSection, cancelSearch, classicsContentTab, classicsSort, setClassicsSort, dcContentTab, error, isSearching, loadClassicsTvCatalogue, loadDcWebSeries, loadMarvelWebSeries, marvelContentTab, marvelFilmFilter, marvelWebSeriesCatalogue, movieCatalogue, nexStreamLoading, openMovieCatalogue, openRegionalCatalogue, openRegionalTvCatalogue, query, recentSearchRef, recentSearches, regionalCatalogueModes, regionalContentTabs, regionalTvModes, regionalWebSeriesCatalogue, runSearch, searchNexStreamTitles, selectCachedFranchise, selectHighestRatedSection, setActiveTopSection, setCatalogueSort, setClassicsContentTab, setDcContentTab, setError, setFranchiseGridPage, setMarvelContentTab, setMarvelFilmFilter, setMovieCatalogue, setNexStreamError, setNexStreamSearchMode, setQuery, setRecentSearches, setRegionalContentTabs, setResolutionFilter, setResults, setSearched, setShowDcWebSeries, setShowMarvelWebSeries, setShowRecentSearches, setSizeSort, setTimeSort, showDcWebSeries, showMarvelWebSeries, showRecentSearches, } = vm;
   const topSectionClass = (section: 'marvel' | 'dc' | 'hollywood' | 'bollywood' | 'korean' | 'pakistani' | 'anime' | 'classics' | 'highest-rated') => activeTopSection === section
     ? 'rounded-lg border border-cyan-400 bg-cyan-500 px-3 py-1.5 text-xs font-bold text-slate-950 shadow-[0_0_12px_rgba(34,211,238,0.35)]'
     : 'rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-500 hover:text-cyan-300';
@@ -180,23 +179,14 @@ export function SearchBarSection({ vm }: { vm: PanelModel }) {
               <button type="button" onClick={() => { setFranchiseGridPage(1); setClassicsSort(DEFAULT_CLASSICS_SORT); setNexStreamError(''); setNexStreamSearchMode(null); void loadClassicsTvCatalogue('classics-anime', 'anime'); }} className={classicsContentTab === 'anime' ? 'rounded-lg px-3 py-2 text-xs font-bold bg-cyan-500 text-slate-950' : 'rounded-lg px-3 py-2 text-xs font-bold bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'}>⛩️ Anime</button>
             </>}
           </div>
-          {(activeTopSection === 'marvel' || activeTopSection === 'dc' || activeTopSection === 'classics') && (
-            <SortBar
-              options={[{ key: 'rating', label: 'Rating' }, { key: 'year', label: 'Year' }]}
-              active={classicsSort.key}
-              direction={classicsSort.direction}
-              onSelect={key => { setFranchiseGridPage(1); setClassicsSort(nextClassicsSort(classicsSort, key as ClassicsSortKey)); }}
-            />
-          )}
-          {(['hollywood', 'bollywood', 'korean', 'pakistani', 'anime', 'highest-rated'] as string[]).includes(String(activeTopSection)) && !isSearching
-            && ((movieCatalogue?.results?.length ?? 0) > 0 || (regionalWebSeriesCatalogue?.results?.length ?? 0) > 0) && (
-            <SortBar
-              options={[{ key: 'popularity', label: 'Popularity' }, { key: 'rating', label: 'Rating' }, { key: 'year', label: 'Year' }]}
-              active={catalogueSort}
-              direction={catalogueSortDirection}
-              onSelect={key => { if (key === catalogueSort) setCatalogueSortDirection(catalogueSortDirection === 'desc' ? 'asc' : 'desc'); else setCatalogueSort(key as 'popularity' | 'rating' | 'year'); }}
-            />
-          )}
+          {(activeTopSection === 'marvel' || activeTopSection === 'dc' || activeTopSection === 'classics') && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-2.5" aria-label="Sort">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sort by</span>
+            {(['year', 'rating'] as const).map(sortKey => {
+              const active = classicsSort.key === sortKey;
+              const arrow = active ? (classicsSort.direction === 'desc' ? ' ↓' : ' ↑') : ' ↓';
+              return <button key={sortKey} type="button" aria-pressed={active} title={active ? 'Click to reverse the order' : 'Sort by ' + sortKey + ', ' + (sortKey === 'year' ? 'newest' : 'highest') + ' first'} onClick={() => { setFranchiseGridPage(1); setClassicsSort(nextClassicsSort(classicsSort, sortKey)); }} className={active ? 'rounded-lg px-3 py-2 text-xs font-bold bg-cyan-500 text-slate-950' : 'rounded-lg px-3 py-2 text-xs font-bold bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'}>{sortKey === 'year' ? 'Year' : 'Rating'}{arrow}</button>;
+            })}
+          </div>}
           {activeTopSection === 'marvel' && marvelContentTab === 'movies' && <div className="mt-2 flex flex-wrap gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-2.5 py-2.5" aria-label="Marvel movie filters">
             {([['all','All'],['mcu','MCU'],['sony','Spiderman'],['x-men','X-Men']] as [MarvelFilmFilter,string][]).map(([filter,label]) => <button key={filter} type="button" onClick={() => { setFranchiseGridPage(1); setMarvelFilmFilter(filter); }} className={marvelFilmFilter === filter ? 'rounded-lg px-3 py-2 text-xs font-bold bg-cyan-500 text-slate-950' : 'rounded-lg px-3 py-2 text-xs font-bold bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'} aria-pressed={marvelFilmFilter === filter}>{label}</button>)}
           </div>}

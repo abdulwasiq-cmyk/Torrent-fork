@@ -31,5 +31,5 @@ COPY --from=frontend-build /frontend/dist ./frontend-dist
 
 ENV PYTHONUNBUFFERED=1
 
-# Fetch both published bundles before the API initializes its caches.
-CMD ["sh", "-c", "python maintenance/fetch_cache_bundle.py; python -m maintenance.fetch_torrent_cache_bundle; uvicorn fullstack_app:app --host 0.0.0.0 --port ${PORT:-3000}"]
+# Fetch the newest published cache bundle first (best effort, never blocks startup).
+CMD ["sh", "-c", "python maintenance/fetch_cache_bundle.py; uvicorn fullstack_app:app --host 0.0.0.0 --port ${PORT:-3000}"]

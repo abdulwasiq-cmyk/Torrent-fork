@@ -229,12 +229,7 @@ export const seedrApi = {
     let data: any = null;
     try { data = body ? JSON.parse(body) : null; } catch { data = null; }
     if (!res.ok) throw new Error(data?.error || body || 'Failed to create Seedr download link');
-    return {
-      url: typeof data?.url === 'string' && data.url.startsWith('/')
-        ? API_BASE + data.url
-        : String(data?.url || ''),
-      name: String(data?.name || ''),
-    };
+    return data;
   },
 
   async getSeedrFileStream(fileId: string, fileName: string, type: 'video' | 'audio'): Promise<{ url: string; externalUrl?: string; name: string; resolvedFileId?: string }> {
@@ -254,7 +249,7 @@ export const seedrApi = {
     return {
       ...data,
       url: streamUrl,
-      externalUrl: data?.externalUrl,
+      externalUrl: data?.externalUrl
     };
   },
 
@@ -349,8 +344,8 @@ export const seedrApi = {
     taskId: number | string;
     name?: string;
     folderId?: string;
-    status: 'waiting' | 'downloading' | 'completed' | 'failed' | 'not_found';
-    progress: number | null;
+    status: 'waiting' | 'downloading' | 'completed' | 'not_found';
+    progress: number;
   }> {
     const res = await apiFetch('/api/seedr/tasks/' + encodeURIComponent(String(taskId)) + '/progress');
     const body = await res.text();
@@ -362,9 +357,7 @@ export const seedrApi = {
       name: typeof data?.name === 'string' ? data.name : '',
       folderId: typeof data?.folderId === 'string' ? data.folderId : '',
       status: data?.status || 'downloading',
-      progress: data?.progress == null || !Number.isFinite(Number(data.progress))
-        ? null
-        : Math.max(0, Math.min(100, Number(data.progress))),
+      progress: Math.max(0, Math.min(100, Number(data?.progress) || 0)),
     };
   },
 

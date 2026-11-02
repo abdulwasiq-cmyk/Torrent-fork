@@ -16,9 +16,8 @@ from urllib.parse import urlsplit
 
 import httpx
 from core.json_cache import read_json_cached
-from core.rate_limit import RateLimit
 from core.cache_diagnostics import _InstrumentedAsyncClient, _record_cache_event
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from core.settings import CACHE_ONLY_MODE, _CACHE_SEED_DIR, data_file, log_cache_only_metadata_block, stored_ttl
 from integrations.vidrift import build_vidrift_movie_url, build_vidrift_tv_url
 
@@ -44,11 +43,6 @@ _NEXSTREAM_CACHE_LOCK = threading.Lock()
 _NEXSTREAM_EPISODE_CACHE_LOCK = threading.RLock()
 _NEXSTREAM_SEARCH_CACHE_TTL = stored_ttl(24 * 60 * 60)
 _NEXSTREAM_RESOLVE_CACHE_TTL = 5 * 60
-_SEARCH_LIMIT = RateLimit("nexstream-search", 30)
-_EPISODES_LIMIT = RateLimit("nexstream-episodes", 60)
-_RESOLVE_LIMIT = RateLimit("nexstream-resolve", 60)
-_MAX_SEARCH_CACHE_ENTRIES = 500
-_MAX_LIVE_EPISODE_SHOWS = 3000
 
 
 def _seed_nexstream_cache() -> None:
@@ -159,9 +153,6 @@ def _set_nexstream_cache(key: str, value: dict) -> None:
             and now - entry["cachedAt"] < _NEXSTREAM_SEARCH_CACHE_TTL
         }
         cache[key] = {"cachedAt": now, "value": value}
-        if len(cache) > _MAX_SEARCH_CACHE_ENTRIES:
-            newest = sorted(cache.items(), key=lambda item: item[1]["cachedAt"], reverse=True)
-            cache = dict(newest[:_MAX_SEARCH_CACHE_ENTRIES])
         temporary_path = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -222,7 +213,6 @@ async def search_titles(
     query: str = Query(..., min_length=2, max_length=120),
     media_type: str = Query("movie", alias="type", pattern="^(movie|tv)$"),
     force_refresh: bool = Query(False),
-    _rate_limit: None = Depends(_SEARCH_LIMIT),
 ):
     """Search TMDB by title so testers don't need to know TMDB IDs."""
     # Cache first: a stored answer must work even on a deployment without TMDB credentials.
@@ -542,20 +532,6 @@ def _episode_cache_response(data: dict, tmdb_id: int, season: int) -> dict | Non
     return None
 
 
-def _prune_live_episode_shows(shows: dict) -> None:
-    """Bound the runtime episode cache: drop the oldest live-fetched shows beyond the cap.
-
-    Shows that came from the bundled cache carry no `cachedAt` and are never dropped here.
-    """
-    live = [(key, entry.get("cachedAt")) for key, entry in shows.items()
-            if isinstance(entry, dict) and isinstance(entry.get("cachedAt"), (int, float))]
-    excess = len(live) - _MAX_LIVE_EPISODE_SHOWS
-    if excess <= 0:
-        return
-    for key, _ in sorted(live, key=lambda item: item[1])[:excess]:
-        del shows[key]
-
-
 def _write_episode_cache(
     tmdb_id: int,
     seasons: list,
@@ -571,11 +547,9 @@ def _write_episode_cache(
         show["tmdbId"] = tmdb_id
         show["seasons"] = seasons
         show["seasonsFetched"] = True
-        show["cachedAt"] = time.time()
         episode_map = show.setdefault("episodesBySeason", {})
         if season is not None and episodes is not None:
             episode_map[str(season)] = episodes
-        _prune_live_episode_shows(data["shows"])
         _write_episode_cache_document(data)
 
 _seed_nexstream_episode_cache()
@@ -585,7 +559,6 @@ _seed_nexstream_episode_cache()
 async def get_tv_episodes(
     tmdb_id: int = Query(..., gt=0),
     season: int = Query(1, ge=1),
-    _rate_limit: None = Depends(_EPISODES_LIMIT),
 ):
     """Serve persisted episode metadata first; fetch TMDB only on cache misses."""
     if tmdb_id <= 0:
@@ -763,7 +736,6 @@ async def resolve_nexstream(
     season: int | None = Query(None, ge=1),
     episode: int | None = Query(None, ge=1),
     provider: str = Query("vidrift", pattern="^(vidrift|nexstream)$"),
-    _rate_limit: None = Depends(_RESOLVE_LIMIT),
 ):
     """Return a player URL for a movie or episode: VidRift (default, embed URL) or NexStream (API)."""
     if provider == "nexstream":

@@ -6,7 +6,6 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "build_self_contained_section_cache.py"
@@ -417,27 +416,23 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                         stdout="".join(f"{name}\n" for name in sorted(release_assets)),
                         stderr="",
                     )
-                if command[:3] == ["gh", "release", "download"]:
-                    asset_name = command[command.index("--pattern") + 1]
-                    target_dir = Path(command[command.index("--dir") + 1])
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    (target_dir / asset_name).write_bytes((output / asset_name).read_bytes())
-                    return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(f"Unexpected publisher command: {command}")
 
-            with patch.object(PUBLISH_MODULE, "advance_pointer", return_value="test-commit"):
-                uploaded_assets = PUBLISH_MODULE.publish_cache_bundle(
-                    output / "cache-bundle.json",
-                    output / "cache-bundle.tar.gz",
-                    "wroxtaaar/Torrent-Studio",
-                    runner=fake_runner,
-                )
+            uploaded_assets = PUBLISH_MODULE.publish_cache_bundle(
+                output / "cache-bundle.json",
+                output / "cache-bundle.tar.gz",
+                "wroxtaaar/Torrent-Studio",
+                runner=fake_runner,
+            )
             immutable_upload = next(
                 call for call in calls
                 if call[:3] == ["gh", "release", "upload"] and "--clobber" not in call
             )
             self.assertEqual(Path(immutable_upload[4]).name, manifest["bundle"])
-            self.assertEqual(uploaded_assets, {manifest["bundle"]})
+            self.assertEqual(
+                uploaded_assets,
+                {manifest["bundle"], "cache-bundle.tar.gz", "cache-bundle.json"},
+            )
 
     def test_publisher_uploads_the_exact_filename_named_by_generated_manifest(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -471,21 +466,14 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                         stdout="".join(f"{name}\n" for name in sorted(release_assets)),
                         stderr="",
                     )
-                if command[:3] == ["gh", "release", "download"]:
-                    asset_name = command[command.index("--pattern") + 1]
-                    target_dir = Path(command[command.index("--dir") + 1])
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    (target_dir / asset_name).write_bytes((output / asset_name).read_bytes())
-                    return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(f"Unexpected publisher command: {command}")
 
-            with patch.object(PUBLISH_MODULE, "advance_pointer", return_value="test-commit"):
-                result = PUBLISH_MODULE.publish_cache_bundle(
-                    manifest_path,
-                    output / "cache-bundle.tar.gz",
-                    "wroxtaaar/Torrent-Studio",
-                    runner=fake_runner,
-                )
+            result = PUBLISH_MODULE.publish_cache_bundle(
+                manifest_path,
+                output / "cache-bundle.tar.gz",
+                "wroxtaaar/Torrent-Studio",
+                runner=fake_runner,
+            )
 
             immutable_uploads = [
                 call for call in calls
@@ -493,11 +481,22 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
             ]
             self.assertEqual(len(immutable_uploads), 1)
             self.assertEqual(Path(immutable_uploads[0][4]).name, archive_name)
-            self.assertEqual(result, {archive_name})
             self.assertEqual(
-                [Path(call[4]).name for call in calls if call[:3] == ["gh", "release", "upload"]],
-                [archive_name],
+                result,
+                {archive_name, "cache-bundle.tar.gz", "cache-bundle.json"},
             )
+            legacy_index = next(
+                i for i, call in enumerate(calls)
+                if call[:3] == ["gh", "release", "upload"]
+                and Path(call[4]).name == "cache-bundle.tar.gz"
+            )
+            manifest_index = next(
+                i for i, call in enumerate(calls)
+                if call[:3] == ["gh", "release", "upload"]
+                and Path(call[4]).name == "cache-bundle.json"
+            )
+            self.assertLess(calls.index(immutable_uploads[0]), legacy_index)
+            self.assertLess(legacy_index, manifest_index)
 
     def test_failed_imdb_cache_result_does_not_replace_good_values(self):
         row = {

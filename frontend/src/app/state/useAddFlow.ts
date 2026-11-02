@@ -3,11 +3,7 @@ import { api } from '../../api/client.ts';
 import { dispatchBrowserNotification, playNotificationSound } from '../../utils/notifications.ts';
 import { useFileExplorerState } from './useFileExplorerState.ts';
 import { useLibraryDataState } from './useLibraryDataState.ts';
-import {
-  advanceSeedrPrepareGeneration,
-  seedrPrepareGenerationIsCurrent,
-  useSeedrState,
-} from './useSeedrState.ts';
+import { useSeedrState } from './useSeedrState.ts';
 import { useSeedrFolderGroups } from './useSeedrFolderGroups.ts';
 import { useTransferRefs } from './useTransferRefs.ts';
 import { useTransferPolling } from './useTransferPolling.ts';
@@ -16,7 +12,7 @@ import { useSeedrConnectionState } from './useSeedrConnectionState.ts';
 import { useSeedrLibrary } from './useSeedrLibrary.ts';
 import { useAddMagnetOpeners } from './useAddMagnetOpeners.ts';
 
-export function useAddFlow({ torrents, setFiles, setStorageStats, setNotifications, setTorrents, setActivityLogs, activityStorageKey, activeUser, files, prevTorrentStates, pendingTransferStates, currentFolder, seedrPrepareGenerationRef, seedrAccountGenerationRef, seedrNotice, seedrPrepareWaiters, setSeedrNotice, setSeedrAddBlockedNotice, setSeedrQuota, setSeedrInsufficientSpacePrompt, seedrNoticeStorageKey, setSeedrFolderContentsCache, selectedSeedrFolderId, setSeedrFiles, setSeedrFolderContentsLoading, setSeedrLibraryFolders, setActiveSeedrFolderOpen, seedrDownloadActive, seedrConnected, setSeedrConnectError, setSeedrOnboardingOpen, forgetSeedrFolders, rememberSeedrTorrentName, setActiveTab, loadSeedrLibrary }: Pick<ReturnType<typeof useLibraryDataState>, 'torrents' | 'setFiles' | 'setStorageStats' | 'setNotifications' | 'setTorrents' | 'setActivityLogs' | 'activityStorageKey' | 'activeUser' | 'files'> & Pick<ReturnType<typeof useTransferRefs>, 'prevTorrentStates' | 'pendingTransferStates'> & Pick<ReturnType<typeof useFileExplorerState>, 'currentFolder'> & Pick<ReturnType<typeof useSeedrState>, 'seedrPrepareGenerationRef' | 'seedrAccountGenerationRef' | 'seedrNotice' | 'seedrPrepareWaiters' | 'setSeedrNotice' | 'setSeedrAddBlockedNotice' | 'setSeedrQuota' | 'setSeedrInsufficientSpacePrompt' | 'seedrNoticeStorageKey' | 'setSeedrFolderContentsCache' | 'selectedSeedrFolderId' | 'setSeedrFiles' | 'setSeedrFolderContentsLoading' | 'setSeedrLibraryFolders' | 'setActiveSeedrFolderOpen'> & Pick<ReturnType<typeof useAddMagnetOpeners>, 'seedrDownloadActive'> & Pick<ReturnType<typeof useSeedrConnectionState>, 'seedrConnected' | 'setSeedrConnectError' | 'setSeedrOnboardingOpen'> & Pick<ReturnType<typeof useSeedrFolderGroups>, 'forgetSeedrFolders' | 'rememberSeedrTorrentName'> & Pick<ReturnType<typeof useAppShellState>, 'setActiveTab'> & Pick<ReturnType<typeof useSeedrLibrary>, 'loadSeedrLibrary'>) {
+export function useAddFlow({ torrents, setFiles, setStorageStats, setNotifications, setTorrents, setActivityLogs, activityStorageKey, activeUser, files, prevTorrentStates, pendingTransferStates, currentFolder, seedrPrepareGenerationRef, seedrNotice, seedrPrepareWaiters, setSeedrNotice, setSeedrAddBlockedNotice, setSeedrQuota, setSeedrInsufficientSpacePrompt, seedrNoticeStorageKey, setSeedrFolderContentsCache, selectedSeedrFolderId, setSeedrFiles, setSeedrFolderContentsLoading, setSeedrLibraryFolders, setActiveSeedrFolderOpen, seedrDownloadActive, seedrConnected, setSeedrConnectError, setSeedrOnboardingOpen, forgetSeedrFolders, rememberSeedrTorrentName, setActiveTab, loadSeedrLibrary }: Pick<ReturnType<typeof useLibraryDataState>, 'torrents' | 'setFiles' | 'setStorageStats' | 'setNotifications' | 'setTorrents' | 'setActivityLogs' | 'activityStorageKey' | 'activeUser' | 'files'> & Pick<ReturnType<typeof useTransferRefs>, 'prevTorrentStates' | 'pendingTransferStates'> & Pick<ReturnType<typeof useFileExplorerState>, 'currentFolder'> & Pick<ReturnType<typeof useSeedrState>, 'seedrPrepareGenerationRef' | 'seedrNotice' | 'seedrPrepareWaiters' | 'setSeedrNotice' | 'setSeedrAddBlockedNotice' | 'setSeedrQuota' | 'setSeedrInsufficientSpacePrompt' | 'seedrNoticeStorageKey' | 'setSeedrFolderContentsCache' | 'selectedSeedrFolderId' | 'setSeedrFiles' | 'setSeedrFolderContentsLoading' | 'setSeedrLibraryFolders' | 'setActiveSeedrFolderOpen'> & Pick<ReturnType<typeof useAddMagnetOpeners>, 'seedrDownloadActive'> & Pick<ReturnType<typeof useSeedrConnectionState>, 'seedrConnected' | 'setSeedrConnectError' | 'setSeedrOnboardingOpen'> & Pick<ReturnType<typeof useSeedrFolderGroups>, 'forgetSeedrFolders' | 'rememberSeedrTorrentName'> & Pick<ReturnType<typeof useAppShellState>, 'setActiveTab'> & Pick<ReturnType<typeof useSeedrLibrary>, 'loadSeedrLibrary'>) {
   const { appendActivityLog } = useTransferPolling({ torrents, setFiles, setStorageStats, setNotifications, setTorrents, setActivityLogs, activityStorageKey, prevTorrentStates, pendingTransferStates, currentFolder });
   const handleSearchPrepare = useCallback(async (
     result: {
@@ -43,16 +39,7 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
     folderId: string;
     folderPath: string;
   }>; deletedFolderIds: string[] }> => {
-    const prepareGeneration = advanceSeedrPrepareGeneration(seedrPrepareGenerationRef);
-    const accountGeneration = seedrAccountGenerationRef.current;
-    const ensurePrepareIsCurrent = () => {
-      if (
-        !seedrPrepareGenerationIsCurrent(seedrPrepareGenerationRef, prepareGeneration) ||
-        seedrAccountGenerationRef.current !== accountGeneration
-      ) {
-        throw new Error('Seedr account changed or preparation was replaced.');
-      }
-    };
+    const prepareGeneration = ++seedrPrepareGenerationRef.current;
     // Defer replacement until a valid magnet has been resolved and is ready to
     // submit. This prevents a bad/unresolvable selection from cancelling the
     // currently working Seedr task.
@@ -67,7 +54,9 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
       throw new Error('Connect your Seedr account first.'); 
     }
 
-    ensurePrepareIsCurrent();
+    if (prepareGeneration !== seedrPrepareGenerationRef.current) {
+      throw new Error('Seedr preparation was replaced by a newer selection.');
+    }
 
     let magnet = String(result.magnetUrl || result.downloadUrl || '').trim();
     if (!magnet.toLowerCase().startsWith('magnet:?')) {
@@ -81,7 +70,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
     // Prepare, keeping slow provider pages out of the initial search request.
     if (!magnet && result.infoUrl) {
       const resolved = await api.resolveSearchMagnet(result.infoUrl, result.indexer || '');
-      ensurePrepareIsCurrent();
       magnet = String(resolved?.magnet || '').trim();
     }
 
@@ -89,7 +77,9 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
       throw new Error('This search result does not contain a usable magnet link.');
     }
 
-    ensurePrepareIsCurrent();
+    if (prepareGeneration !== seedrPrepareGenerationRef.current) {
+      throw new Error('Seedr preparation was replaced by a newer selection.');
+    }
 
     let resolvedMetadata = metadata;
     // Seedr can resolve metadata itself. When the search provider already
@@ -102,7 +92,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
         result.sourceUrl || '',
         ''
       );
-      ensurePrepareIsCurrent();
     }
 
     const torrentName =
@@ -111,7 +100,9 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
       'Torrent';
     const requiredBytes = Number(resolvedMetadata?.totalSize || result.size || 0);
 
-    ensurePrepareIsCurrent();
+    if (prepareGeneration !== seedrPrepareGenerationRef.current) {
+      throw new Error('Seedr preparation was replaced by a newer selection.');
+    }
 
     const prepared = await api.prepareSeedrMagnet(
       magnet,
@@ -119,7 +110,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
       torrentName,
       replacementTaskId == null ? undefined : replacementTaskId
     );
-    ensurePrepareIsCurrent();
 
     // The backend is authoritative for task replacement and also catches a
     // stale task left behind after a page refresh. Reject the older UI waiter
@@ -185,7 +175,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
     });
 
     const completed = await waitForCompletion;
-    ensurePrepareIsCurrent();
     return {
       ...completed,
       deletedFolderIds,
@@ -337,8 +326,7 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
         forceBackend,
         selectedNames,
         seedrTaskId,
-        torrentName,
-        requiredBytes
+        torrentName
       );
       if (result.backend === 'seedr') {
         const initialTorrentName = String(torrentName || '').trim();
@@ -497,30 +485,24 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
   useEffect(() => {
     if (!seedrNotice?.taskId || seedrNotice.status === 'completed') return;
 
-    const accountGeneration = seedrAccountGenerationRef.current;
     let active = true;
     let timeoutId: number | null = null;
-    const isCurrent = () =>
-      active && seedrAccountGenerationRef.current === accountGeneration;
 
     const scheduleNextPoll = (delayMs: number) => {
-      if (!active || !isCurrent()) return;
+      if (!active) return;
       timeoutId = window.setTimeout(poll, delayMs);
     };
 
     const applyProgress = (result: {
       status: 'waiting' | 'downloading' | 'completed' | 'not_found';
-      progress: number | null;
+      progress: number;
       name?: string;
       folderId?: string;
     }) => {
-      const progress = result.progress == null
-        ? null
-        : Math.max(0, Math.min(100, Number(result.progress) || 0));
+      const progress = Math.max(0, Math.min(100, Number(result.progress) || 0));
       const completed = result.status === 'completed';
 
       setSeedrNotice(prev => {
-        if (!isCurrent()) return prev;
         if (!prev) return null;
 
         const canonicalName = String(prev.name || '').trim() || String(result.name || '').trim();
@@ -544,7 +526,7 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
           // notice "completed" here causes React to tear down this effect
           // immediately, which can abort the rest of the completion flow.
           status: completed ? 'downloading' : result.status,
-          progress: completed ? 100 : progress == null ? prev.progress : progress,
+          progress: completed ? 100 : progress,
         };
       });
 
@@ -552,28 +534,13 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
     };
 
     const poll = async () => {
-      if (!active || !isCurrent()) return;
+      if (!active) return;
 
       try {
         // This endpoint only asks Seedr for task state/progress, so it is much
         // faster than loading task contents, folder names, and file URLs.
         const progressResult = await api.getSeedrTaskProgress(seedrNotice.taskId!);
-        if (!active || !isCurrent()) return;
-
-        if (progressResult.status === 'failed') {
-          const waiterKey = String(seedrNotice.taskId);
-          const waiter = seedrPrepareWaiters.current[waiterKey];
-          if (waiter) {
-            delete seedrPrepareWaiters.current[waiterKey];
-            waiter.reject(new Error('Seedr reported that this transfer failed.'));
-          }
-          setSeedrNotice(null);
-          setSeedrAddBlockedNotice('Seedr reported that this transfer failed. Choose another source or try again.');
-          try {
-            window.localStorage.removeItem(seedrNoticeStorageKey);
-          } catch {}
-          return;
-        }
+        if (!active) return;
 
         if (progressResult.status === 'not_found') {
           const waiterKey = String(seedrNotice.taskId);
@@ -590,11 +557,7 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
           return;
         }
 
-        const progressStatus: 'waiting' | 'downloading' | 'completed' = progressResult.status;
-        const completed = applyProgress({
-          ...progressResult,
-          status: progressStatus,
-        });
+        const completed = applyProgress(progressResult);
 
         if (!completed) {
           // Poll frequently so the visible progress bar moves as soon as Seedr
@@ -606,10 +569,9 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
         // Only when complete do we make the heavier request for the final
         // files/download URLs before promoting the task into the library.
         const result = await api.getSeedrTask(seedrNotice.taskId!);
-        if (!active || !isCurrent()) return;
+        if (!active) return;
 
         setSeedrNotice(prev => {
-          if (!isCurrent()) return prev;
           if (!prev) return null;
 
           const resolvedFolderId = String(
@@ -672,7 +634,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
           folderId: string;
           folderPath: string;
         }>) => {
-          if (!active || !isCurrent()) return;
           const waiterKey = String(seedrNotice.taskId);
           const waiter = seedrPrepareWaiters.current[waiterKey];
           if (!waiter) return;
@@ -699,7 +660,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
           if (completedFolderId) {
             try {
               const contents = await api.getSeedrFolderContents(completedFolderId);
-              if (!active || !isCurrent()) return;
               eagerFiles = contents.files.map(file => ({
                 id: file.id,
                 streamId: file.streamId,
@@ -710,10 +670,11 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
               }));
 
               if (eagerFiles.length > 0) {
-                setSeedrFolderContentsCache(prev => isCurrent()
-                  ? { ...prev, [completedFolderId]: eagerFiles }
-                  : prev);
-                if (isCurrent() && selectedSeedrFolderId === completedFolderId) {
+                setSeedrFolderContentsCache(prev => ({
+                  ...prev,
+                  [completedFolderId]: eagerFiles,
+                }));
+                if (selectedSeedrFolderId === completedFolderId) {
                   setSeedrFiles(eagerFiles);
                   setSeedrFolderContentsLoading(false);
                 }
@@ -727,7 +688,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
             const eagerSize = eagerFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
             const eagerName = completedTorrentName || 'Completed Seedr download';
             setSeedrLibraryFolders(prev => {
-              if (!isCurrent()) return prev;
               const exists = prev.some(folder => String(folder.folderId || folder.id) === completedFolderId);
               if (exists) return prev;
 
@@ -750,18 +710,17 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
             // The completed folder is now present in the UI state. Only now
             // mark the transfer notice completed, so React cannot remove the
             // active card before the new folder has been mounted.
-            setSeedrNotice(prev => isCurrent()
-              ? prev ? { ...prev, status: 'completed', progress: 100 } : null
-              : prev);
+            setSeedrNotice(prev => (
+              prev ? { ...prev, status: 'completed', progress: 100 } : null
+            ));
 
-            if (isCurrent() && eagerFiles.length > 0) {
+            if (eagerFiles.length > 0) {
               resolvePrepareWaiter(eagerFiles);
             }
           }
 
           for (let attempt = 0; attempt < 12; attempt += 1) {
-            const refreshed = await loadSeedrLibrary(true, isCurrent);
-            if (!active || !isCurrent()) return;
+            const refreshed = await loadSeedrLibrary(true);
 
             // loadSeedrLibrary replaces the folder array with the latest API
             // response. Preserve our eager completed folder if Seedr's index is
@@ -770,7 +729,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
               const folderIdForMerge = eagerFolderId;
               const mergeName = completedTorrentName || 'Completed Seedr download';
               setSeedrLibraryFolders(prev => {
-                if (!isCurrent()) return prev;
                 const exists = prev.some(folder => String(folder.folderId || folder.id) === folderIdForMerge);
                 if (exists) return prev;
 
@@ -812,7 +770,6 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
               if (resolvedFolderId) {
                 try {
                   const contents = await api.getSeedrFolderContents(resolvedFolderId);
-                  if (!active || !isCurrent()) return;
                   const mapped = contents.files.map(file => ({
                     id: file.id,
                     streamId: file.streamId,
@@ -822,18 +779,19 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
                     folderPath: completedFolder.path,
                   }));
 
-                  setSeedrFolderContentsCache(prev => isCurrent()
-                    ? { ...prev, [resolvedFolderId]: mapped }
-                    : prev);
+                  setSeedrFolderContentsCache(prev => ({
+                    ...prev,
+                    [resolvedFolderId]: mapped,
+                  }));
 
                   const waiterKey = String(seedrNotice.taskId);
                   const waiter = seedrPrepareWaiters.current[waiterKey];
-                  if (isCurrent() && waiter && mapped.length > 0) {
+                  if (waiter && mapped.length > 0) {
                     delete seedrPrepareWaiters.current[waiterKey];
                     waiter.resolve({ files: mapped });
                   }
 
-                  if (isCurrent() && selectedSeedrFolderId === resolvedFolderId) {
+                  if (selectedSeedrFolderId === resolvedFolderId) {
                     setSeedrFiles(mapped);
                     setSeedrFolderContentsLoading(false);
                   }
@@ -847,14 +805,12 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
 
             if (attempt < 11) {
               await new Promise(resolve => window.setTimeout(resolve, 1500));
-              if (!active || !isCurrent()) return;
             }
           }
         };
 
-        if (!isCurrent()) return;
         void refreshCompletedLibrary();
-        if (isCurrent()) setActiveSeedrFolderOpen(false);
+        setActiveSeedrFolderOpen(false);
 
         const immediateFiles = Array.isArray((result as any).files)
           ? (result as any).files
@@ -880,7 +836,7 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
         );
 
       } catch {
-        if (active && isCurrent()) scheduleNextPoll(2500);
+        scheduleNextPoll(2500);
       }
     };
 
@@ -890,7 +846,7 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
       active = false;
       if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
-  }, [seedrNotice?.taskId, seedrNotice?.status, loadSeedrLibrary, rememberSeedrTorrentName, seedrAccountGenerationRef]);
+  }, [seedrNotice?.taskId, seedrNotice?.status, loadSeedrLibrary, rememberSeedrTorrentName]);
 
   return {
     handleSearchPrepare,

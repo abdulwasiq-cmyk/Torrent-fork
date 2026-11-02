@@ -14,9 +14,8 @@ services:
       # Use only self-contained section caches; metadata providers are never called at runtime.
       - key: CACHE_FIRST
         value: "true"
-      # Metadata and torrent archives are fetched independently from the "cache-data" release;
-      # their rolling pointers live on the "cache-manifests" branch. Set the corresponding
-      # *_BUNDLE_BASE_URL=off variable to disable either fetcher.
+      # The container fetches the newest data bundle from the rolling "cache-data" release at start
+      # (see backend/cache-seed/README.md). Set CACHE_BUNDLE_BASE_URL=off to disable.
       - key: CACHE_ONLY_MODE
         value: "true"
       - key: BACKFILL_MISSING_METADATA

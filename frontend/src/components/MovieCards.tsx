@@ -69,9 +69,6 @@ export interface MovieCompactCardProps {
   providersAriaLabel: string;
   /** Text shown when there are no streaming providers to list. */
   providersFallbackText: string;
-  expanded?: boolean;
-  expandedContent?: React.ReactNode;
-  posterBadges?: React.ReactNode;
   /** Optional action area pinned to the bottom of the card (e.g. a progress button). */
   footer?: React.ReactNode;
 }
@@ -93,30 +90,20 @@ export const MovieCompactCard: React.FC<MovieCompactCardProps> = ({
   providers,
   providersAriaLabel,
   providersFallbackText,
-  expanded = false,
-  expandedContent,
-  posterBadges,
   footer,
 }) => {
   const showImdb = hasImdbRating(imdb);
   const showTmdb = !preferImdb && !showImdb && tmdbRating != null && tmdbRating > 0;
   return (
     <MovieCatalogueCard
-      onClick={expanded ? undefined : event => {
+      onClick={event => {
         const target = event.target;
         if (target instanceof Element && target.closest('a, button, input, select, textarea, [role="button"]')) return;
         onPosterClick();
       }}
-      className={expanded
-        ? 'relative min-w-0 rounded-xl border border-slate-800 bg-slate-900 p-2 hover:bg-slate-800/80 transition sm:rounded-none sm:border-0 sm:bg-transparent sm:p-2 sm:px-4 sm:py-4 lg:flex lg:flex-col lg:self-start lg:h-fit lg:rounded-[14px] lg:border lg:border-slate-800 lg:bg-slate-900 lg:p-0 lg:hover:-translate-y-1 lg:hover:border-slate-700'
-        : 'cursor-pointer transition hover:border-slate-700 hover:bg-slate-900/95'}
+      className="cursor-pointer transition hover:border-slate-700 hover:bg-slate-900/95"
     >
-      <div className={expanded
-        ? 'flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 lg:flex-col lg:items-stretch lg:gap-0'
-        : 'flex flex-col'}>
-      <div data-movie-poster-slot="true" data-poster-waiting={!posterSrc ? "true" : "false"} className={expanded
-        ? 'relative w-full sm:w-24 shrink-0 aspect-[2/3] rounded-lg overflow-hidden border border-slate-800 bg-slate-950 shadow-md lg:w-full lg:rounded-none lg:border-0 lg:shadow-none'
-        : 'relative aspect-[2/3] w-full overflow-hidden bg-slate-950'}>
+      <div data-movie-poster-slot="true" data-poster-waiting={!posterSrc ? "true" : "false"} className="relative aspect-[2/3] w-full overflow-hidden bg-slate-950">
         {posterSrc ? (
           <>
             <img
@@ -127,7 +114,6 @@ export const MovieCompactCard: React.FC<MovieCompactCardProps> = ({
               fetchPriority="high"
               decoding="async"
               className="h-full w-full object-cover"
-              onClick={expanded ? onPosterClick : undefined}
               onLoad={event => {
                       const image = event.currentTarget;
                       image.dataset.posterQuality = image.dataset.highQualityTried === 'true' ? 'high-loaded' : 'low-loaded';
@@ -168,12 +154,12 @@ export const MovieCompactCard: React.FC<MovieCompactCardProps> = ({
                       image.dataset.posterQuality = image.src !== previousSrc ? 'low-retrying' : 'low-failed';
                     }}
             />
-            <div data-poster-placeholder="true" onClick={expanded ? onPosterClick : undefined} className="hidden absolute inset-0 flex items-center justify-center text-slate-600">
+            <div data-poster-placeholder="true" className="hidden absolute inset-0 flex items-center justify-center text-slate-600">
               <Film className="h-8 w-8" />
             </div>
           </>
         ) : (
-          <div onClick={expanded ? onPosterClick : undefined} className="absolute inset-0 flex items-center justify-center text-slate-600">
+          <div className="absolute inset-0 flex items-center justify-center text-slate-600">
             <Film className="h-8 w-8" />
           </div>
         )}
@@ -192,12 +178,9 @@ export const MovieCompactCard: React.FC<MovieCompactCardProps> = ({
             ⭐ TMDB {tmdbRating!.toFixed(1)}
           </span>
         ) : null}
-        {expanded ? posterBadges : null}
       </div>
 
-      <div className={expanded ? 'min-w-0 flex-1 lg:w-full' : 'flex flex-1 flex-col gap-2 p-2.5'}>
-      {expanded && expandedContent ? expandedContent : (
-      <>
+      <div className="flex flex-1 flex-col gap-2 p-2.5">
         <div>
           <h3 className="line-clamp-2 text-sm font-bold leading-snug text-slate-100">
             <a href={titleHref} target="_blank" rel="noreferrer" className="hover:text-cyan-300" title="Open on IMDb">
@@ -244,9 +227,6 @@ export const MovieCompactCard: React.FC<MovieCompactCardProps> = ({
           <div className="text-[10px] leading-relaxed text-slate-500">{providersFallbackText}</div>
         )}
         {footer ? <div className="mt-auto">{footer}</div> : null}
-      </>
-      )}
-      </div>
       </div>
     </MovieCatalogueCard>
   );
@@ -290,7 +270,6 @@ export interface MoviePrepareCardProps {
   directStream?: { label: string; disabled: boolean; onClick: () => void };
   /** Omitted when the title has no torrent (no button is shown). */
   prepare?: { isPreparing: boolean; disabled: boolean; onClick: () => void };
-  contentOnly?: boolean;
   className?: string;
 }
 
@@ -316,21 +295,19 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
   prepared,
   directStream,
   prepare,
-  contentOnly = false,
   className = '',
 }) => {
   const showImdb = hasImdbRating(imdb);
   return (
     <div
-      className={contentOnly ? 'contents' : [
+      className={[
         'relative min-w-0 rounded-xl border border-slate-800 bg-slate-900 p-2 hover:bg-slate-800/80 transition sm:rounded-none sm:border-0 sm:bg-transparent sm:p-2 sm:px-4 sm:py-4 lg:flex lg:flex-col lg:self-start lg:h-fit lg:rounded-[14px] lg:border lg:border-slate-800 lg:bg-slate-900 lg:p-0 lg:hover:-translate-y-1 lg:hover:border-slate-700',
         className || 'z-0',
       ].join(' ')}
     >
-      <div className={contentOnly ? 'contents' : 'flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 lg:flex-col lg:items-stretch lg:gap-0'}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 lg:flex-col lg:items-stretch lg:gap-0">
         <div className="min-w-0 flex-1 lg:w-full">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2 sm:gap-3 lg:flex-col lg:gap-0">
-            {!contentOnly && (
             <div data-movie-poster-slot="true" data-poster-waiting={!posterSrc ? "true" : "false"} className="relative w-full sm:w-24 shrink-0 aspect-[2/3] rounded-lg overflow-hidden border border-slate-800 bg-slate-950 shadow-md lg:w-full lg:rounded-none lg:border-0 lg:shadow-none">
               {posterSrc ? (
                 <>
@@ -425,7 +402,6 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
                 </div>
               )}
             </div>
-            )}
 
             <div className="min-w-0 flex-1 lg:w-full lg:flex-none lg:p-3">
               <div className="flex items-start gap-2">

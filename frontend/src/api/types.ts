@@ -1,5 +1,4 @@
 export interface TorrentSearchResult {
-  [field: string]: unknown;
   sectionCacheRecord?: boolean;
   guid?: string;
   title: string;
@@ -8,8 +7,6 @@ export interface TorrentSearchResult {
   seeders: number;
   leechers: number;
   indexer?: string;
-  provider?: string;
-  category?: string;
   protocol?: string;
   publishDate?: string;
   infoHash?: string;
@@ -24,20 +21,6 @@ export interface TorrentSearchResult {
   genres?: string[];
   posterUrl?: string;
   quality?: string;
-  identity?: string;
-  identityKind?: 'infoHash' | string;
-  mediaType?: 'movie' | 'tv';
-  seasonNumber?: number;
-  episodeNumber?: number;
-  mediaIdentities?: TorrentMediaIdentity[];
-  metadataCardMatches?: Array<{
-    matchType?: string;
-    section?: string;
-    subsection?: string;
-    [field: string]: unknown;
-  }>;
-  sourceProvenance?: Array<Record<string, unknown>>;
-  sourceVariants?: Array<Record<string, unknown>>;
   // Set on catalogue-derived poster results.
   overview?: string;
   tmdbId?: number | string | null;
@@ -51,23 +34,6 @@ export interface TorrentSearchResult {
   ottAvailability?: MovieCatalogueItem['ottAvailability'];
   streamingProviders?: TvCatalogueItem['streamingProviders'];
   providerLink?: string;
-}
-
-export interface TorrentMediaIdentity {
-  mediaType: 'movie' | 'tv';
-  title: string;
-  year?: number | string | null;
-  tmdbId?: number | string | null;
-  imdbId?: string | null;
-  seasonNumber?: number | null;
-  episodeNumber?: number | null;
-  [field: string]: unknown;
-}
-
-export interface TorrentCacheDocument {
-  schemaVersion: number;
-  section: string;
-  records: TorrentSearchResult[];
 }
 
 
@@ -159,9 +125,6 @@ export type MovieCatalogueKey =
 export interface MovieCatalogueItem {
   id: number | string;
   title: string;
-  mediaType?: 'movie' | 'tv';
-  seasonNumber?: number;
-  episodeNumber?: number;
   sectionCacheRecord?: boolean;
   year?: number | null;
   releaseDate?: string;

@@ -4,221 +4,51 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { build, transform } from 'esbuild';
 
-const root = new URL('../', import.meta.url);
-const sectionCachePath = fileURLToPath(new URL('src/api/sectionCache.ts', root));
-const source = await readFile(sectionCachePath, 'utf8');
-const transformed = await transform(source, { loader: 'ts', format: 'esm' });
-const sectionCache = await import(
-  `data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`
-);
-const searchBundle = await build({
-  entryPoints: [fileURLToPath(new URL('src/api/search.ts', root))],
+const sourcePath = fileURLToPath(new URL('../src/api/sectionCache.ts', import.meta.url));
+const source = await readFile(sourcePath, 'utf8');
+const { code } = await transform(source, { loader: 'ts', format: 'esm' });
+const sectionCache = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const searchPath = fileURLToPath(new URL('../src/api/search.ts', import.meta.url));
+const bundledSearch = await build({
+  entryPoints: [searchPath],
   bundle: true,
   format: 'esm',
   platform: 'node',
-  target: 'node20',
   write: false,
   define: { 'import.meta.env': '{}' },
 });
-const searchApi = await import(
-  `data:text/javascript;base64,${Buffer.from(searchBundle.outputFiles[0].text).toString('base64')}`
+const searchApiModule = await import(
+  `data:text/javascript;base64,${Buffer.from(bundledSearch.outputFiles[0].text).toString('base64')}`
 );
-const repositoryRoot = new URL('../../', import.meta.url);
 
-function sectionDocument(section, subsection, mediaType, results) {
+function rows(count, prefix) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: index + 1,
+    title: `${prefix} ${String(index + 1).padStart(2, '0')}`,
+    year: 2020,
+    mediaType: 'tv',
+  }));
+}
+
+function tvDocument(section, subsectionName, results, pageOffsets, totalResults = results.length) {
   return {
     section,
     metadataSelfContained: true,
     subsections: {
-      [subsection]: {
-        mediaType,
+      [subsectionName]: {
+        mediaType: 'tv',
         pageSize: 18,
-        totalResults: results.length,
+        pageCount: pageOffsets.length - 1,
+        pageOffsets,
+        totalResults,
         results,
       },
     },
   };
 }
 
-test('movie sections with torrent support map to their canonical cache section', () => {
-  const expected = {
-    marvel: 'marvel',
-    'marvel-hindi': 'marvel',
-    'dc-live-action': 'dc',
-    'dc-live-action-hindi': 'dc',
-    'dc-animated': 'dc',
-    classics: 'favourites',
-    'highest-rated-hollywood': 'highest-rated',
-    'highest-rated-bollywood': 'highest-rated',
-    'latest-hollywood': 'hollywood',
-    'popular-hollywood': 'hollywood',
-    'trending-hollywood': 'hollywood',
-    'latest-bollywood': 'bollywood',
-    'popular-bollywood': 'bollywood',
-    'trending-bollywood': 'bollywood',
-    'bollywood-library': 'bollywood',
-  };
-  for (const [catalogue, section] of Object.entries(expected)) {
-    assert.equal(sectionCache.torrentCacheSectionForMovieCatalogue(catalogue), section);
-    assert.equal(sectionCache.movieCatalogueTorrentLookupEnabled(catalogue), true);
-  }
-});
-
-test('Korean, Pakistani and Anime movie catalogues remain metadata-only', () => {
-  for (const region of ['korean', 'pakistani', 'anime']) {
-    for (const mode of ['popular', 'trending', 'latest']) {
-      const catalogue = `${mode}-${region}`;
-      assert.equal(sectionCache.torrentCacheSectionForMovieCatalogue(catalogue), null);
-      assert.equal(sectionCache.movieCatalogueTorrentLookupEnabled(catalogue), false);
-    }
-  }
-  assert.deepEqual(sectionCache.movieCatalogueSection('popular-korean'), {
-    section: 'korean',
-    subsection: 'movies',
-  });
-  assert.deepEqual(sectionCache.movieCatalogueSection('popular-anime'), {
-    section: 'anime',
-    subsection: 'movies',
-  });
-  assert.equal(sectionCache.torrentCacheSectionForMovieCatalogue('unknown'), null);
-});
-
-test('TV section mappings remain independent of movie torrent lookup configuration', () => {
-  assert.equal(sectionCache.torrentCacheSectionForTvCatalogue('marvel'), 'marvel');
-  assert.equal(sectionCache.torrentCacheSectionForTvCatalogue('pakistani-popular'), 'pakistani');
-  assert.deepEqual(sectionCache.franchiseCatalogueSection('marvel'), {
-    section: 'marvel',
-    subsection: 'movies',
-  });
-  assert.deepEqual(sectionCache.franchiseCatalogueSection('dc-live-action-hindi'), {
-    section: 'dc',
-    subsection: 'live-action',
-  });
-});
-
-test('movie and TV pages paginate metadata rows without torrent variants', () => {
-  const movieRows = Array.from({ length: 37 }, (_, index) => ({
-    id: index + 1,
-    tmdbId: index + 1,
-    title: `Movie ${index + 1}`,
-    year: 2020,
-  }));
-  const movieDocument = sectionDocument('marvel', 'movies', 'movie', movieRows);
-  const moviePage1 = sectionCache.franchiseMoviePageFromSection(movieDocument, 'movies', 1, 18);
-  const moviePage2 = sectionCache.franchiseMoviePageFromSection(movieDocument, 'movies', 2, 18);
-  const moviePage3 = sectionCache.franchiseMoviePageFromSection(movieDocument, 'movies', 3, 18);
-
-  assert.equal(moviePage1.totalResults, 37);
-  assert.deepEqual(
-    [moviePage1.cards.length, moviePage2.cards.length, moviePage3.cards.length],
-    [18, 18, 1],
-  );
-  assert.deepEqual(
-    moviePage1.cards.map(movie => movie.title),
-    movieRows.slice(0, 18).map(movie => movie.title),
-  );
-  assert.deepEqual(
-    moviePage2.cards.map(movie => movie.title),
-    movieRows.slice(18, 36).map(movie => movie.title),
-  );
-  assert.equal(
-    new Set([...moviePage1.cards, ...moviePage2.cards].map(movie => movie.key)).size,
-    36,
-  );
-  assert.ok([...moviePage1.cards, ...moviePage2.cards].every(movie =>
-    !Object.hasOwn(movie, 'variants') &&
-    !Object.hasOwn(movie, 'magnetUrl') &&
-    !Object.hasOwn(movie, 'infoHash')
-  ));
-
-  const tvRows = Array.from({ length: 40 }, (_, index) => ({
-    id: index + 1,
-    title: `Series ${index + 1}`,
-  }));
-  const tvDocument = sectionDocument('marvel', 'series', 'tv', tvRows);
-  const tvPage1 = sectionCache.tvCataloguePageFromSection(tvDocument, 'marvel', 'series', 1);
-  const tvPage2 = sectionCache.tvCataloguePageFromSection(tvDocument, 'marvel', 'series', 2);
-  assert.deepEqual([tvPage1.results.length, tvPage2.results.length], [18, 18]);
-  assert.equal(
-    sectionCache.franchiseMoviePageFromSection(tvDocument, 'series', 1, 18),
-    null,
-  );
-});
-
-test('TV pages keep fixed 18-record boundaries and do not duplicate records', () => {
-  const rows = Array.from({ length: 51 }, (_, index) => ({
-    id: index + 1,
-    title: `Series ${index + 1}`,
-  }));
-  const document = sectionDocument('bollywood', 'tv-popular', 'tv', rows);
-  document.subsections['tv-popular'].pageOffsets = [0, 16, 34, 51];
-  const pages = [1, 2, 3].map(page => (
-    sectionCache.tvCataloguePageFromSection(
-      document,
-      'indian-popular',
-      'tv-popular',
-      page,
-    )
-  ));
-
-  assert.deepEqual(pages.map(page => page.results.length), [18, 18, 15]);
-  assert.deepEqual(
-    pages.flatMap(page => page.results).map(show => show.title),
-    rows.map(show => show.title),
-  );
-  assert.equal(
-    new Set(pages.flatMap(page => page.results).map(show => show.id)).size,
-    rows.length,
-  );
-});
-
-test('Marvel, DC, Favourites and Anime TV catalogues retain their section pagination', async t => {
-  const views = [
-    { label: 'Marvel Web Series', section: 'marvel', catalogue: 'marvel', subsection: 'series', count: 57 },
-    { label: 'DC Web Series', section: 'dc', catalogue: 'dc-live-action', subsection: 'series', count: 40 },
-    { label: 'Favourites Series', section: 'favourites', catalogue: 'classics-web-series', subsection: 'series', count: 32 },
-    { label: 'Anime TV', section: 'anime', catalogue: 'anime-popular', subsection: 'series', count: 54 },
-    { label: 'Favourites Anime TV', section: 'favourites', catalogue: 'classics-anime', subsection: 'anime', count: 29 },
-  ];
-
-  for (const view of views) {
-    await t.test(view.label, async () => {
-      const document = JSON.parse(await readFile(
-        new URL(`backend/cache-seed/${view.section}.json`, repositoryRoot),
-        'utf8',
-      ));
-      const pages = Array.from(
-        { length: Math.ceil(view.count / 18) },
-        (_, index) => sectionCache.tvCataloguePageFromSection(
-          document,
-          view.catalogue,
-          view.subsection,
-          index + 1,
-        ),
-      );
-      const rows = pages.flatMap(page => page.results);
-
-      assert.equal(rows.length, view.count);
-      assert.deepEqual(
-        rows.map(row => `${row.id}|${row.title}`),
-        document.subsections[view.subsection].results.map(row => `${row.id}|${row.title}`),
-      );
-      assert.deepEqual(
-        pages.map(page => page.results.length),
-        [...Array.from({ length: pages.length - 1 }, () => 18), view.count % 18 || 18],
-      );
-      assert.ok(pages.every(page => page.totalResults === view.count));
-    });
-  }
-});
-
-test('TV section selection and pagination make no torrent API request', async t => {
-  const document = sectionDocument(
-    'marvel',
-    'series',
-    'tv',
-    Array.from({ length: 40 }, (_, index) => ({ id: index + 1, title: `Series ${index + 1}` })),
-  );
+test('initial TV loading fetches its section endpoint, not the legacy catalogue API', async t => {
+  const document = tvDocument('hollywood', 'tv-popular', rows(54, 'Show'), [0, 18, 36, 54], 60);
   const originalFetch = globalThis.fetch;
   const requests = [];
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -226,49 +56,146 @@ test('TV section selection and pagination make no torrent API request', async t 
     requests.push(String(input));
     return new Response(JSON.stringify(document), { status: 200 });
   };
-
-  const page1 = await sectionCache.tvCataloguePageFromSectionCache(
-    section => searchApi.searchApi.getSectionCache(section),
-    'marvel',
+  const page = await sectionCache.tvCataloguePageFromSectionCache(
+    section => searchApiModule.searchApi.getSectionCache(section),
+    'hollywood-popular',
     1,
   );
-  const page2 = await sectionCache.tvCataloguePageFromSectionCache(
-    section => searchApi.searchApi.getSectionCache(section),
-    'marvel',
-    2,
-  );
 
-  assert.equal(page1.results.length, 18);
-  assert.equal(page2.results.length, 18);
+  assert.equal(page.provider, 'self-contained-section-cache');
+  assert.equal(page.page, 1);
   assert.equal(requests.length, 1);
-  assert.match(requests[0], /\/api\/sections\/marvel(?:\?|$)/);
-  assert.doesNotMatch(requests[0], /torrent|torrents|torrent-options/);
+  assert.match(requests[0], /\/api\/sections\/hollywood$/);
+  assert.equal(requests.some(url => url.includes('/api/tv/catalogue/')), false);
 });
 
-test('all nine metadata section documents retain valid structure without torrent rows', async () => {
+test('TV previous/next reuse the section response and never call the legacy TV API', async t => {
+  const document = tvDocument('bollywood', 'tv-popular', rows(51, 'Bollywood'), [0, 16, 34, 51], 56);
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async input => {
+    requests.push(String(input));
+    return new Response(JSON.stringify(document), { status: 200 });
+  };
+  const loadPage = page => sectionCache.tvCataloguePageFromSectionCache(
+    section => searchApiModule.searchApi.getSectionCache(section),
+    'indian-popular',
+    page,
+  );
+
+  const initial = await loadPage(1);
+  const next = await loadPage(initial.page + 1);
+  const previous = await loadPage(next.page - 1);
+
+  assert.equal(initial.results[0].sectionCacheRecord, true);
+  assert.deepEqual(next.results.map(show => show.title), rows(51, 'Bollywood').slice(18, 36).map(show => show.title));
+  assert.deepEqual(previous.results.map(show => show.title), rows(51, 'Bollywood').slice(0, 18).map(show => show.title));
+  assert.equal(requests.length, 1);
+  assert.match(requests[0], /\/api\/sections\/bollywood$/);
+  assert.equal(requests.some(url => url.includes('/api/tv/catalogue/')), false);
+});
+
+test('TV pages use fixed 18-record boundaries even when stored offsets are legacy splits', () => {
+  const document = tvDocument('bollywood', 'tv-popular', rows(54, 'Drama'), [0, 16, 34, 51], 56);
+
+  const page1 = sectionCache.tvCataloguePageFromSection(document, 'indian-popular', 'tv-popular', 1);
+  const page2 = sectionCache.tvCataloguePageFromSection(document, 'indian-popular', 'tv-popular', 2);
+  const page3 = sectionCache.tvCataloguePageFromSection(document, 'indian-popular', 'tv-popular', 3);
+
+  assert.deepEqual([page1.results.length, page2.results.length, page3.results.length], [18, 18, 18]);
+  assert.deepEqual(
+    [...page1.results, ...page2.results, ...page3.results].map(show => show.title),
+    rows(54, 'Drama').map(show => show.title),
+  );
+  for (const page of [page1, page2, page3]) {
+    assert.equal(page.totalPages, 3);
+    assert.equal(page.totalResults, 54);
+    assert.equal(page.curatedOrder, true);
+  }
+});
+
+test('the final TV page contains at most 18 remaining records', () => {
+  const document = tvDocument('bollywood', 'tv-popular', rows(51, 'Drama'), [0, 16, 34, 51], 56);
+  const pages = [1, 2, 3].map(page => (
+    sectionCache.tvCataloguePageFromSection(document, 'indian-popular', 'tv-popular', page)
+  ));
+
+  assert.deepEqual(pages.map(page => page.results.length), [18, 18, 15]);
+  assert.equal(pages[2].totalResults, 51);
+  assert.equal(pages[2].totalPages, 3);
+});
+
+test('movie pagination still slices section rows in order', () => {
+  const movieRows = Array.from({ length: 36 }, (_, index) => ({
+    id: index + 1,
+    title: `Movie ${String(index + 1).padStart(2, '0')}`,
+    mediaType: 'movie',
+  }));
+  const document = {
+    section: 'hollywood',
+    metadataSelfContained: true,
+    subsections: {
+      popular: {
+        mediaType: 'movie',
+        pageSize: 18,
+        totalResults: 36,
+        results: movieRows,
+      },
+    },
+  };
+
+  const page = sectionCache.movieCataloguePageFromSection(document, 'popular-hollywood', 'popular', 2);
+  assert.equal(page.page, 2);
+  assert.equal(page.totalPages, 2);
+  assert.deepEqual(page.results.map(movie => movie.title), movieRows.slice(18).map(movie => movie.title));
+  assert.equal(page.results[0].sectionCacheRecord, true);
+});
+
+test('Hollywood and Bollywood TV catalogue mappings retain all three subsections', () => {
+  const expected = {
+    'hollywood-popular': ['hollywood', 'tv-popular'],
+    'hollywood-trending': ['hollywood', 'tv-trending'],
+    'hollywood-latest': ['hollywood', 'tv-latest'],
+    'indian-popular': ['bollywood', 'tv-popular'],
+    'indian-trending': ['bollywood', 'tv-trending'],
+    'indian-latest': ['bollywood', 'tv-latest'],
+  };
+
+  for (const [catalogue, location] of Object.entries(expected)) {
+    assert.deepEqual(sectionCache.tvCatalogueSection(catalogue), {
+      section: location[0],
+      subsection: location[1],
+    });
+  }
+});
+
+test('all nine section documents declare consistent 18-record pagination metadata', async () => {
   const sections = [
     'hollywood', 'bollywood', 'marvel', 'dc', 'highest-rated',
     'korean', 'pakistani', 'anime', 'favourites',
   ];
+  const cacheDirectory = new URL('../../backend/cache-seed/', import.meta.url);
 
   for (const section of sections) {
-    const document = JSON.parse(await readFile(
-      new URL(`backend/cache-seed/${section}.json`, repositoryRoot),
-      'utf8',
-    ));
-    assert.equal(document.section, section);
-    assert.equal(document.metadataSelfContained, true);
-    assert.ok(document.subsections && typeof document.subsections === 'object');
-    assert.equal(Object.hasOwn(document, 'records'), false);
+    const document = JSON.parse(await readFile(new URL(`${section}.json`, cacheDirectory), 'utf8'));
     for (const subsection of Object.values(document.subsections)) {
-      assert.ok(Array.isArray(subsection.results));
-      assert.equal(subsection.pageSize, 18);
-      assert.equal(subsection.totalResults, subsection.results.length);
-      assert.ok(subsection.results.every(row =>
-        !Object.hasOwn(row, 'variants') &&
-        !Object.hasOwn(row, 'magnetUrl') &&
-        !Object.hasOwn(row, 'infoHash')
+      const results = subsection.results;
+      const pages = Array.from({ length: subsection.pageCount }, (_, index) => (
+        results.slice(index * 18, (index + 1) * 18)
       ));
+      assert.equal(subsection.pageSize, 18, `${section}/${subsection.catalogueKey}`);
+      assert.equal(subsection.pageCount, Math.ceil(results.length / 18), `${section}/${subsection.catalogueKey}`);
+      assert.equal(subsection.totalResults, results.length, `${section}/${subsection.catalogueKey}`);
+      assert.ok(pages.every(page => page.length === 18 || page.length < 18));
+      assert.ok(pages.every((page, index) => index === pages.length - 1 || page.length === 18));
+      if (subsection.mediaType === 'tv') {
+        assert.deepEqual(
+          subsection.pageOffsets,
+          [...Array.from({ length: pages.length }, (_, index) => index * 18), results.length],
+          `${section}/${subsection.catalogueKey} offsets`,
+        );
+      }
     }
   }
 });

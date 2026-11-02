@@ -25,7 +25,6 @@ from cryptography.fernet import Fernet, InvalidToken
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -214,7 +213,6 @@ from search.torrent_metadata import MagnetRequest, router as torrent_metadata_ro
 
 
 app = FastAPI(title=APP_NAME)
-app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 def _diagnostic_feature_for_path(path: str) -> str:
@@ -435,13 +433,6 @@ app.include_router(catalogues_movies_router)
 
 from catalogues.section_caches import router as section_caches_router
 app.include_router(section_caches_router)
-
-from catalogues.torrent_caches import (
-    initialize_torrent_cache,
-    router as torrent_caches_router,
-)
-app.include_router(torrent_caches_router)
-app.router.add_event_handler("startup", initialize_torrent_cache)
 
 app.router.add_event_handler("startup", _warm_extra_catalogues_on_startup)
 

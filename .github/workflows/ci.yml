@@ -126,33 +126,15 @@ jobs:
           cd "$APP_DIR"
           git fetch origin main
           git pull --ff-only origin main
-          docker compose up -d --build --force-recreate torrent-studio
-          deadline=$((SECONDS + 240))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            remaining=$((deadline - SECONDS))
-            if [ "$remaining" -le 0 ]; then
-              break
-            fi
-            request_timeout=10
-            if [ "$remaining" -lt "$request_timeout" ]; then
-              request_timeout="$remaining"
-            fi
-            if curl --connect-timeout 3 --max-time "$request_timeout" -fsS \
-              http://127.0.0.1:${HOST_PORT:-3000}/api/health >/dev/null; then
+          docker compose up -d --build torrent-studio
+          for attempt in $(seq 1 24); do
+            if curl -fsS http://127.0.0.1:${HOST_PORT:-3000}/api/health >/dev/null; then
               echo "Torrent Studio health check passed."
               exit 0
             fi
-            remaining=$((deadline - SECONDS))
-            if [ "$remaining" -le 0 ]; then
-              break
-            fi
-            sleep_for=5
-            if [ "$remaining" -lt "$sleep_for" ]; then
-              sleep_for="$remaining"
-            fi
-            sleep "$sleep_for"
+            sleep 5
           done
-          echo "Deployment started, but the health check did not pass within 240 seconds."
+          echo "Deployment started, but the health check did not pass within 120 seconds."
           docker compose ps
           docker compose logs --tail=100 torrent-studio
           exit 1

@@ -98,12 +98,10 @@ def _seedr_restore_session(raw_cookie: str) -> tuple[str, dict[str, Any]] | None
         return None
 
 def current_seedr_token() -> str:
-    """Return a browser session token, or a legacy token outside request scope."""
+    """Return the Seedr token for the current request's connected account."""
     token = _seedr_request_token.get().strip()
     if token:
         return normalize_seedr_token(token)
-    if _seedr_request_session_id.get().strip():
-        return ""
     if ALLOW_LEGACY_SEEDR_TOKEN and SEEDR_TOKEN:
         return normalize_seedr_token(SEEDR_TOKEN)
     return ""

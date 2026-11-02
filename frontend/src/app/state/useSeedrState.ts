@@ -1,17 +1,5 @@
 import { useState, useRef } from 'react';
 
-export function advanceSeedrPrepareGeneration(generationRef: { current: number }): number {
-  generationRef.current += 1;
-  return generationRef.current;
-}
-
-export function seedrPrepareGenerationIsCurrent(
-  generationRef: { current: number },
-  generation: number,
-): boolean {
-  return generationRef.current === generation;
-}
-
 export function useSeedrState() {
   type SeedrNotice = {
     taskId: number | string | null;
@@ -129,7 +117,6 @@ export function useSeedrState() {
   const [seedrStreamLoadingId, setSeedrStreamLoadingId] = useState<string | null>(null);
   const [isCancellingSeedr, setIsCancellingSeedr] = useState(false);
   const seedrPrepareGenerationRef = useRef(0);
-  const seedrAccountGenerationRef = useRef(0);
   const [activeSeedrFolderOpen, setActiveSeedrFolderOpen] = useState(false);
   const [selectedSeedrFolderId, setSelectedSeedrFolderId] = useState<string | null>(() => {
     try {
@@ -187,7 +174,6 @@ export function useSeedrState() {
     isCancellingSeedr,
     setIsCancellingSeedr,
     seedrPrepareGenerationRef,
-    seedrAccountGenerationRef,
     setActiveSeedrFolderOpen,
     selectedSeedrFolderId,
     setSelectedSeedrFolderId,

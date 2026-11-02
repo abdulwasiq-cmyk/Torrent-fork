@@ -120,25 +120,3 @@ def test_garbage_cookie_is_ignored(client):
     response = client.get("/api/seedr/session")
     assert response.status_code == 200
     assert response.json()["connected"] is False
-
-
-def test_shared_legacy_token_is_not_reported_as_personal_connection(client, monkeypatch):
-    monkeypatch.setattr(seedr_session, "ALLOW_LEGACY_SEEDR_TOKEN", True)
-    monkeypatch.setattr(seedr_session, "SEEDR_TOKEN", "server-configured-token")
-
-    response = client.get("/api/seedr/session")
-
-    assert response.status_code == 200
-    assert response.json()["connected"] is False
-    assert "server-configured-token" not in response.text
-
-    library = client.get("/api/seedr/files")
-    assert library.status_code == 200
-    assert library.json() == {"configured": False, "files": []}
-    assert seedr_session.current_seedr_token() == "server-configured-token"
-
-    add = client.post(
-        "/api/seedr/add",
-        json={"magnet": "magnet:?xt=urn:btih:" + "d" * 40},
-    )
-    assert add.status_code == 503

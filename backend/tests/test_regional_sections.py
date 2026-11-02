@@ -45,39 +45,6 @@ def test_new_regional_movie_catalogue_pages_contain_18_entries(monkeypatch):
     assert len(result["results"]) == 18
 
 
-@pytest.mark.parametrize("catalogue_key", ["trending-anime", "latest-anime"])
-def test_anime_regional_catalogues_are_available_to_refresh(monkeypatch, catalogue_key):
-    async def fetch_page(key, page, skip_ids=None, skip_pages=0):
-        assert key == catalogue_key
-        assert page == 2
-        return {
-            "catalogue": key,
-            "page": page,
-            "totalPages": 3,
-            "totalResults": 54,
-            "pageSize": 18,
-            "results": [{"id": page, "title": f"{key} page {page}"}],
-        }
-
-    async def enrich(payload):
-        return payload
-
-    monkeypatch.setattr(movies, "CACHE_ONLY_MODE", False)
-    monkeypatch.setattr(movies, "CACHE_FIRST", False)
-    monkeypatch.setattr(movies, "_tmdb_movie_catalogue_cache", {})
-    monkeypatch.setattr(movies, "_read_tmdb_persistent_cache", lambda *args, **kwargs: None)
-    monkeypatch.setattr(movies, "_write_tmdb_persistent_cache", lambda *args, **kwargs: None)
-    monkeypatch.setattr(movies, "_fetch_paginated_regional_movie_catalogue", fetch_page)
-    monkeypatch.setattr(movies, "_enrich_regional_movie_catalogue_metadata", enrich)
-
-    result = asyncio.run(
-        movies._api_tmdb_movie_catalogue(catalogue_key, 2, True, 5, False)
-    )
-
-    assert result["catalogue"] == catalogue_key
-    assert result["page"] == 2
-
-
 def test_highest_rated_movie_catalogue_bypasses_stale_regional_cache(monkeypatch):
     expected = {
         "catalogue": "highest-rated-hollywood",

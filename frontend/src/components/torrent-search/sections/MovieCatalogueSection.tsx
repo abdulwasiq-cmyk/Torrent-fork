@@ -8,11 +8,10 @@ import { cataloguePosterOverride, cataloguePosterSource, imdbFallbackForCatalogu
 import { lowQualityPosterUrl, posterKeyFor } from '../posterUrls.ts';
 import { catalogueMovieIdentity, extractedQuality } from '../helpers.ts';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
-import { applySortDirection } from './SortBar.tsx';
 
 export function MovieCatalogueSection({ vm }: { vm: PanelModel }) {
-  const { cataloguePosterUrlsRef, catalogueSort, catalogueSortDirection, closeMoviePrepareCard, imdbRatingsByKey, isSearching, movieCatalogue, movieCatalogueSearchText, movieTorrentPreviewCatalogueId, movieTorrentPreviewGroup, movieTorrentPreviewPosterUrl, movieTorrentSearchError, movieTorrentSearchLoading, movieTorrentSearchTitle, nexStreamResolvingId, openMovieCatalogue, setCatalogueSort, ottAvailabilityForMovie, ottPendingCount, pendingPosterAction, playWithNexStream, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, posterUrlFor, prepareBuildPendingRef, prepareClickIntentRef, prepareMovieTorrent, prepareStateFor, prepareTraceIdRef, preparedActionsFor, searchMovieTorrents, selectedMovieTorrentQualityByGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setSelectedMovieTorrentQualityByGroup, startPosterBackgroundWorkers, streamingOnly, visibleMovieCatalogueItems } = vm;
-  const sortedVisibleMovieCatalogueItems = applySortDirection(catalogueSort === 'popularity'
+  const { cataloguePosterUrlsRef, catalogueSort, closeMoviePrepareCard, imdbRatingsByKey, isSearching, movieCatalogue, movieCatalogueSearchText, movieTorrentPreviewCatalogueId, movieTorrentPreviewGroup, movieTorrentPreviewPosterUrl, movieTorrentSearchError, movieTorrentSearchLoading, movieTorrentSearchTitle, nexStreamResolvingId, openMovieCatalogue, setCatalogueSort, ottAvailabilityForMovie, ottPendingCount, pendingPosterAction, playWithNexStream, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, posterUrlFor, prepareBuildPendingRef, prepareClickIntentRef, prepareMovieTorrent, prepareStateFor, prepareTraceIdRef, preparedActionsFor, searchMovieTorrents, selectedMovieTorrentQualityByGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setSelectedMovieTorrentQualityByGroup, startPosterBackgroundWorkers, streamingOnly, visibleMovieCatalogueItems } = vm;
+  const sortedVisibleMovieCatalogueItems = catalogueSort === 'popularity'
     ? visibleMovieCatalogueItems
     : visibleMovieCatalogueItems
       .map((movie, index) => ({ movie, index }))
@@ -29,7 +28,7 @@ export function MovieCatalogueSection({ vm }: { vm: PanelModel }) {
           0;
         return ratingOf(b.movie) - ratingOf(a.movie) || a.index - b.index;
       })
-      .map(({ movie }) => movie), catalogueSortDirection);
+      .map(({ movie }) => movie);
   return (
     <>
       {movieCatalogue && (
@@ -46,6 +45,30 @@ export function MovieCatalogueSection({ vm }: { vm: PanelModel }) {
 
 
 
+          {movieCatalogue && visibleMovieCatalogueItems.length > 0 && !isSearching && (
+            <div className="flex flex-wrap items-center gap-2 px-1" aria-label="Sort movies">
+              <span className="mr-1 text-xs text-slate-400">Sort by</span>
+              {([
+                ['popularity', 'Popularity'],
+                ['rating', 'Rating'],
+                ['year', 'Year'],
+              ] as const).map(([sort, label]) => (
+                <button
+                  key={sort}
+                  type="button"
+                  aria-pressed={catalogueSort === sort}
+                  onClick={() => setCatalogueSort(sort)}
+                  className={'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ' + (
+                    catalogueSort === sort
+                      ? 'border-cyan-400 bg-cyan-500 text-slate-950'
+                      : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-cyan-500/60'
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
             <button

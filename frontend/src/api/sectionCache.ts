@@ -4,6 +4,7 @@ import type {
   MovieCataloguePage,
   SectionCacheDocument,
   SectionCacheRow,
+  TorrentSearchResult,
   TvCatalogueItem,
   TvCataloguePage,
 } from './types.ts';
@@ -58,47 +59,10 @@ const TV_CATALOGUE_SECTIONS: Record<string, SectionCacheLocation> = {
 
 const FRANCHISE_SECTION_MODES: Record<string, SectionCacheLocation> = {
   marvel: { section: 'marvel', subsection: 'movies' },
-  'marvel-hindi': { section: 'marvel', subsection: 'movies' },
   'dc-live-action': { section: 'dc', subsection: 'live-action' },
-  'dc-live-action-hindi': { section: 'dc', subsection: 'live-action' },
   'dc-animated': { section: 'dc', subsection: 'animated' },
   classics: { section: 'favourites', subsection: 'movies' },
 };
-
-const FRANCHISE_TORRENT_SECTION_ALIASES: Record<string, string> = {
-  'marvel-hindi': 'marvel',
-  'dc-live-action-hindi': 'dc',
-};
-
-const ADDITIONAL_TORRENT_MOVIE_SECTIONS: Partial<Record<MovieCatalogueKey, string>> = {
-  'bollywood-library': 'bollywood',
-};
-
-const TORRENT_DISABLED_MOVIE_CATALOGUES = new Set<MovieCatalogueKey>([
-  'popular-pakistani',
-  'trending-pakistani',
-  'latest-pakistani',
-  'popular-korean',
-  'trending-korean',
-  'latest-korean',
-  'popular-anime',
-  'trending-anime',
-  'latest-anime',
-]);
-
-const MCU_TITLES = new Set([
-  'ant man', 'ant man and the wasp', 'ant man and the wasp quantumania',
-  'avengers', 'the avengers', 'avengers age of ultron', 'avengers endgame', 'avengers infinity war',
-  'black panther', 'black panther wakanda forever', 'black widow', 'captain america brave new world',
-  'captain america civil war', 'captain america the first avenger', 'captain america the winter soldier',
-  'captain marvel', 'doctor strange', 'doctor strange in the multiverse of madness',
-  'deadpool and wolverine', 'eternals', 'guardians of the galaxy', 'guardians of the galaxy vol 2',
-  'guardians of the galaxy vol 3', 'iron man', 'iron man 2', 'iron man 3',
-  'shang chi and the legend of the ten rings', 'spider man brand new day', 'spider man far from home',
-  'spider man homecoming', 'spider man no way home', 'the fantastic four first steps',
-  'the incredible hulk', 'the marvels', 'the punisher one last kill', 'the punisher: one last kill',
-  'thor', 'thor love and thunder', 'thor ragnarok', 'thor the dark world', 'thunderbolts',
-]);
 
 function pageResults<T>(rows: T[], page: number, pageSize: number): T[] {
   const start = (Math.max(1, page) - 1) * pageSize;
@@ -186,61 +150,6 @@ export function movieCatalogueSection(key: MovieCatalogueKey): SectionCacheLocat
   return MOVIE_CATALOGUE_SECTIONS[key] || null;
 }
 
-export function torrentCacheSectionForMovieCatalogue(key: string | undefined): string | null {
-  if (!key) return null;
-  if (TORRENT_DISABLED_MOVIE_CATALOGUES.has(key as MovieCatalogueKey)) return null;
-  return FRANCHISE_TORRENT_SECTION_ALIASES[key]
-    || MOVIE_CATALOGUE_SECTIONS[key as MovieCatalogueKey]?.section
-    || ADDITIONAL_TORRENT_MOVIE_SECTIONS[key as MovieCatalogueKey]
-    || null;
-}
-
-export function movieCatalogueTorrentLookupEnabled(key: string | undefined): boolean {
-  return !key || !TORRENT_DISABLED_MOVIE_CATALOGUES.has(key as MovieCatalogueKey);
-}
-
-export function torrentCacheSectionForTvCatalogue(key: string): string | null {
-  return TV_CATALOGUE_SECTIONS[key]?.section || null;
-}
-
-function normalizedTitle(value: string): string {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-export function matchesMarvelFilmFilter(
-  title: string,
-  year: number | string | null | undefined,
-  filter: 'all' | 'mcu' | 'x-men' | 'sony',
-): boolean {
-  const rawTitle = String(title || '');
-  const normalized = normalizedTitle(rawTitle.replace(/\s*\(?((?:19|20)\d{2})\)?\s*$/, ''));
-  const releaseYear = Number(year || rawTitle.match(/\b(?:19|20)\d{2}\b/)?.[0] || 0);
-  if (releaseYear === 1977 && /^(?:the )?amazing spider man$/.test(normalized)) return false;
-  if (filter === 'all') return true;
-
-  const isSpiderMan = (value: string) => /spider\s*man|spider\s*verse|into the spider|across the spider/i.test(value);
-  const isXMen = (value: string) => /x\s*men|wolverine|deadpool|new mutants|dark phoenix/i.test(value);
-  const isSony = (value: string) => isSpiderMan(value) || /venom|morbius|kraven|madame web/i.test(value);
-  switch (filter) {
-    case 'mcu':
-      return MCU_TITLES.has(normalized) || [...MCU_TITLES].some(item => normalized.startsWith(item + ' ')) ||
-        /^(?:marvel television special presentation )?(?:the )?punisher one last kill$/.test(normalized);
-    case 'x-men':
-      return isXMen(normalized);
-    case 'sony':
-      return isSony(normalized);
-    default:
-      return true;
-  }
-}
-
 export function movieCataloguePageFromSection(
   document: SectionCacheDocument,
   catalogue: MovieCatalogueKey,
@@ -318,44 +227,37 @@ export async function franchiseSectionDocumentFromCache(
   };
 }
 
-export interface FranchiseMovieCard extends MovieCatalogueItem {
-  key: string;
-}
-
-export function franchiseMovieCardsForPage(
-  cards: FranchiseMovieCard[],
-  page: number,
-  pageSize: number,
-): FranchiseMovieCard[] {
-  const safePageSize = Math.max(1, Math.floor(Number(pageSize) || SECTION_PAGE_SIZE));
-  const safePage = Math.max(1, Math.floor(Number(page) || 1));
-  const start = (safePage - 1) * safePageSize;
-  return cards.slice(start, start + safePageSize);
-}
-
-export function franchiseMoviePageFromSection(
+export function franchiseRowsFromSection(
   document: SectionCacheDocument,
   subsectionName: string,
-  page: number,
-  pageSize: number,
-): { cards: FranchiseMovieCard[]; totalResults: number } | null {
+): TorrentSearchResult[] | null {
   const subsection = document.subsections[subsectionName];
   if (!subsection || subsection.mediaType !== 'movie') return null;
-  const totalResults = Number(subsection.totalResults) || subsection.results.length;
-  const safePageSize = Math.max(1, Math.floor(Number(pageSize) || SECTION_PAGE_SIZE));
-  const safePage = Math.max(1, Math.floor(Number(page) || 1));
-  const start = (safePage - 1) * safePageSize;
-  const cards = subsection.results.slice(start, start + safePageSize).map(row => {
-    const movie = movieItem(row);
-    const year = String(row.year ?? '');
-    const identity = movie.tmdbId ?? movie.id ?? movie.imdbId ?? normalizedTitle(row.title);
+  return subsection.results.map(row => {
+    const tmdbId = sectionRowTmdbId(row);
     return {
-      ...movie,
-      key: `${identity}|${year || 'unknown'}`,
+      sectionCacheRecord: true,
+      title: row.title,
+      mediaTitle: row.title,
+      size: 0,
+      seeders: 0,
+      leechers: 0,
+      year: row.year,
+      releaseDate: row.releaseDate || undefined,
+      rating: row.rating,
+      posterUrl: row.posterUrl || undefined,
+      overview: row.overview || undefined,
+      tmdbId,
+      id: tmdbId ?? row.id,
+      imdbId: row.imdbId || undefined,
+      imdbRating: row.imdbRating,
+      imdbRatingStatus: row.imdbRatingStatus || undefined,
+      imdbVotes: row.imdbVotes == null ? undefined : String(row.imdbVotes),
+      imdbUrl: row.imdbUrl || undefined,
+      imdbCheckedAt: row.imdbCheckedAt,
+      ottAvailability: row.ottAvailability || undefined,
+      streamingProviders: row.streamingProviders,
+      providerLink: row.providerLink || undefined,
     };
   });
-  return {
-    cards,
-    totalResults,
-  };
 }

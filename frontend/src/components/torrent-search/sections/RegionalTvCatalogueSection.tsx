@@ -3,7 +3,6 @@ import type { RegionalTvGroup, RegionalTvMode } from '../types.ts';
 import { imdbRatingKey } from '../grouping.ts';
 import { TvShowCard } from '../TvShowCard.tsx';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
-import { applySortDirection } from './SortBar.tsx';
 
 const REGIONAL_SECTIONS = ['hollywood', 'bollywood', 'korean', 'pakistani', 'anime'] as const;
 
@@ -11,7 +10,6 @@ export function RegionalTvCatalogueSection({ vm }: { vm: PanelModel }) {
   const {
     activeTopSection,
     catalogueSort,
-    catalogueSortDirection,
     imdbRatingsByKey,
     openRegionalTvCatalogue,
     playCatalogueTvWithNexStream,
@@ -51,8 +49,8 @@ export function RegionalTvCatalogueSection({ vm }: { vm: PanelModel }) {
       seen.add(key);
       return true;
     });
-    if (!showSortButtons || catalogueSort === 'popularity') return applySortDirection(uniqueRows, catalogueSortDirection);
-    return applySortDirection(uniqueRows
+    if (!showSortButtons || catalogueSort === 'popularity') return uniqueRows;
+    return uniqueRows
       .map((show, index) => ({ show, index }))
       .sort((a, b) => {
         if (catalogueSort === 'rating') {
@@ -66,7 +64,7 @@ export function RegionalTvCatalogueSection({ vm }: { vm: PanelModel }) {
           Number(show.year) || Number(String(show.releaseDate || '').match(/^(\d{4})/)?.[1]) || 0;
         return yearOf(b.show) - yearOf(a.show) || a.index - b.index;
       })
-      .map(({ show }) => show), catalogueSortDirection);
+      .map(({ show }) => show);
   })();
   const navigate = (nextPage: number) => {
     if (group && mode) void openRegionalTvCatalogue(group, mode, nextPage, false);
@@ -126,6 +124,25 @@ export function RegionalTvCatalogueSection({ vm }: { vm: PanelModel }) {
 
 
 
+      {catalogue && sortedShows.length > 0 && !regionalWebSeriesLoading && showSortButtons && (
+        <div className="flex flex-wrap items-center gap-2 px-1" aria-label="Sort catalogue">
+          {(['popularity', 'rating', 'year'] as const).map(option => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={catalogueSort === option}
+              onClick={() => vm.setCatalogueSort(option)}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                catalogueSort === option
+                  ? 'border-cyan-400 bg-cyan-500 text-slate-950'
+                  : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-cyan-500/60'
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
 
       {catalogue && sortedShows.length > 0 && !regionalWebSeriesLoading && (
         <>

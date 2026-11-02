@@ -283,47 +283,6 @@ export function filterTorrentSearchResults(
   });
 }
 
-export function filterUsableTorrentResults(
-  results: TorrentSearchResult[],
-  options: {
-    expectedTitles: string[];
-    minSizeBytes: number;
-    maxSizeBytes: number;
-    requireActiveSeeders: boolean;
-  },
-): TorrentSearchResult[] {
-  const lowQualityRelease = /(?:^|[\s._()[\]-])(?:cam(?:rip)?|hdcam|hd[ ._-]?cam|telesync|tele[ ._-]?sync|ts[ ._-]?(?:md|ac3|hd)?|telecine|dvdscr|dvd[ ._-]?scr|screener|workprint)(?:$|[\s._()[\]-])/i;
-  return results.filter(result => {
-    const isSectionCacheRecord = result.sectionCacheRecord === true;
-    const releaseTitle = normalizeGroupTitle(String(result.title || ''));
-    const mediaTitle = normalizeGroupTitle(String(result.mediaTitle || ''));
-    const titleMatches = isSectionCacheRecord || options.expectedTitles.some(expected =>
-      releaseTitle.includes(expected) || mediaTitle === expected || mediaTitle.includes(expected)
-    );
-    if (!titleMatches) return false;
-
-    // Cached torrent records are keyed by infoHash. Prepare can construct a
-    // magnet URI from that hash, or resolve infoUrl through the selected indexer.
-    // Treat both as valid sources just like an explicit magnet/download URL.
-    const hasSource = Boolean(
-      String(result.magnetUrl || '').trim() ||
-      String(result.downloadUrl || '').trim() ||
-      String(result.sourceUrl || '').trim() ||
-      String(result.infoHash || '').trim() ||
-      String(result.infoUrl || '').trim()
-    );
-    if (!hasSource) return false;
-    if (isSectionCacheRecord) return true;
-
-    const rawSize = Number(result.size);
-    const size = Number.isFinite(rawSize) && rawSize > 0 ? rawSize : 0;
-    const seeders = Number(result.seeders);
-    if (size < options.minSizeBytes || size > options.maxSizeBytes) return false;
-    if (options.requireActiveSeeders && (!Number.isFinite(seeders) || seeders <= 0)) return false;
-    return !lowQualityRelease.test(String(result.title || '') + ' ' + String(result.quality || ''));
-  });
-}
-
 export function groupTorrentResults(results: TorrentSearchResult[]): TorrentQualityGroup[] {
   const titleBuckets = new Map<string, Array<{ result: TorrentSearchResult; identity: ReturnType<typeof torrentMediaIdentity> }>>();
   for (const result of results) {

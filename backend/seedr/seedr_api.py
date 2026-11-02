@@ -2,8 +2,8 @@
 
 import asyncio
 import base64
+import hashlib
 import json
-import math
 import re
 import time
 import uuid
@@ -23,19 +23,19 @@ from seedr.seedr_client import (
     arr,
     folder_name,
     info_hash,
+    legacy_seedr_list_contents,
     normalize_file,
     rename_seedr_folder,
     seedr_data,
     seedr_error_message,
     seedr_request,
+    seedr_root_request,
     seedr_task_folder_id,
     seedr_task_name,
     task_complete,
     task_contents,
-    task_failed,
     task_id,
     unwrap_seedr_task,
-    validate_seedr_torrent_size,
 )
 from seedr.seedr_session import (
     _clear_seedr_session_token,
@@ -47,9 +47,11 @@ from seedr.seedr_session import (
     normalize_seedr_token,
 )
 from core.settings import (
+    DEBUG_ENDPOINTS_ENABLED,
     SEEDR_DEVICE_AUTHORIZE_URL,
     SEEDR_DEVICE_CLIENT_ID,
     SEEDR_DEVICE_CODE_URL,
+    SEEDR_MEDIA_BASE,
     SEEDR_PAT_BASE,
     SEEDR_SESSION_COOKIE,
     SEEDR_V2_BASE,
@@ -395,7 +397,7 @@ async def seedr_session(request: Request):
     # the browser can submit a PAT, and a slow provider must not cause POST 403s.
     # Actual token/API failures are reported by the operation the user requests.
     return {
-        "connected": bool(_seedr_session_token(session_id)),
+        "connected": bool(current_seedr_token()),
         "csrfToken": str(session.get("csrf_token") or ""),
     }
 
@@ -410,13 +412,11 @@ async def _validate_seedr_pat(token: str) -> None:
         f"{SEEDR_PAT_BASE}/user",
         f"{SEEDR_PAT_BASE}/tasks",
         f"{SEEDR_PAT_BASE}/fs/root/contents",
+        f"{SEEDR_V2_BASE}/tasks",
+        f"{SEEDR_V2_BASE}/fs/root/contents",
     )
     outcomes: list[str] = []
     saw_unauthorized = False
-    saw_forbidden = False
-    saw_insufficient_scope = False
-    saw_rate_limit = False
-    saw_endpoint_mismatch = False
     timeout = httpx.Timeout(8.0, connect=3.0)
 
     # The endpoints have been verified to accept the current PAT when called
@@ -453,41 +453,29 @@ async def _validate_seedr_pat(token: str) -> None:
                 continue
 
             if response.status_code in {403, 404, 405}:
-                if response.status_code == 403:
-                    saw_forbidden = True
-                    try:
-                        payload = response.json() if response.content else {}
-                        reason = str(
-                            payload.get("error_description")
-                            or payload.get("reason_phrase")
-                            or payload.get("message")
-                            or payload.get("error")
-                            or ""
-                        ).strip().lower() if isinstance(payload, dict) else ""
-                        error_code = str(payload.get("error") or "").strip().lower().replace("_", " ") if isinstance(payload, dict) else ""
-                        saw_insufficient_scope = saw_insufficient_scope or (
-                            "insufficient_scope" in reason
-                            or "insufficient scope" in reason
-                            or "insufficient scope" in error_code
-                        )
-                    except (ValueError, TypeError):
-                        pass
-                saw_endpoint_mismatch = saw_endpoint_mismatch or response.status_code in {404, 405}
                 outcomes.append(f"{url}={response.status_code}")
                 continue
 
-            if response.status_code == 429:
-                saw_rate_limit = True
-                outcomes.append(f"{url}=429")
-                continue
+            try:
+                payload = response.json() if response.content else {}
+                reason = str(
+                    payload.get("error_description")
+                    or payload.get("reason_phrase")
+                    or payload.get("message")
+                    or payload.get("error")
+                    or ""
+                ).strip() if isinstance(payload, dict) else ""
+            except (ValueError, TypeError):
+                reason = ""
 
             # Retry the next known API variant for transient/provider-specific
             # errors rather than concluding the token is invalid prematurely.
             outcomes.append(f"{url}=HTTP{response.status_code}")
             logger.info(
-                "Seedr PAT validation endpoint returned HTTP %s: endpoint=%s",
+                "Seedr PAT validation endpoint returned HTTP %s: endpoint=%s reason=%s",
                 response.status_code,
                 url,
+                reason[:160],
             )
 
     logger.warning(
@@ -499,37 +487,6 @@ async def _validate_seedr_pat(token: str) -> None:
             "SEEDR_PAT_REJECTED",
             401,
             "Seedr rejected the Personal Access Token. Copy a fresh PAT from Seedr and try again.",
-        )
-
-    if saw_insufficient_scope:
-        raise SeedrError(
-            "SEEDR_PAT_INSUFFICIENT_SCOPE",
-            403,
-            "Seedr recognized the Personal Access Token but denied account access. Grant the required account-read scope and try again.",
-        )
-
-    if saw_forbidden:
-        raise SeedrError(
-            "SEEDR_PAT_ACCESS_DENIED",
-            403,
-            "Seedr denied access to account information. Verify the token permissions and try again.",
-        )
-
-    if saw_rate_limit:
-        raise SeedrError(
-            "SEEDR_RATE_LIMITED",
-            429,
-            "Seedr rate-limited token validation. Please wait and try again.",
-        )
-
-    if saw_endpoint_mismatch and all(
-        "=404" in row or "=405" in row or "transport:" in row
-        for row in outcomes
-    ):
-        raise SeedrError(
-            "SEEDR_ENDPOINT_NOT_FOUND",
-            404,
-            "Seedr did not expose a compatible account API endpoint. Please retry later.",
         )
 
     raise SeedrError(
@@ -569,7 +526,11 @@ async def seedr_connect_pat(request: Request):
     session["device"] = None
     session["last_seen"] = time.time()
 
-    logger.info("Seedr PAT connected")
+    logger.info(
+        "Seedr PAT connected: session=%s token_length=%s",
+        _seedr_session_fingerprint(session_id),
+        len(pat),
+    )
     return {"status": "connected", "connected": True}
 
 
@@ -865,8 +826,13 @@ async def seedr_token_diagnostic():
         return {
             "configured": False,
             "code": "SEEDR_TOKEN_MISSING",
+            "tokenLength": 0,
+            "tokenFingerprint": None,
             "checks": {},
         }
+
+    token = normalize_seedr_token(current_seedr_token())
+    fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()[:12] if token else None
 
     async def check(path: str) -> dict[str, Any]:
         try:
@@ -875,21 +841,20 @@ async def seedr_token_diagnostic():
         except SeedrError as exc:
             return {"ok": False, "status": exc.status_code, "code": exc.code, "message": exc.detail}
         except Exception as exc:
-            logger.info("Seedr token diagnostic request failed: type=%s", type(exc).__name__)
-            return {
-                "ok": False,
-                "status": 0,
-                "code": "LOCAL_ERROR",
-                "message": "Seedr diagnostic request failed.",
-            }
+            return {"ok": False, "status": 0, "code": "LOCAL_ERROR", "message": str(exc)[:200]}
 
-    return {
+    result: dict[str, Any] = {
         "configured": True,
         "code": "SEEDR_TOKEN_PRESENT",
         "checks": {
-            "user": await check("/user"),
+            "user": await check("/tasks" if _seedr_session_auth_mode(_seedr_request_session_id.get().strip()) == "pat" else "/user"),
         },
     }
+    if DEBUG_ENDPOINTS_ENABLED:
+        # Token metadata is only returned when debugging is explicitly enabled.
+        result["tokenLength"] = len(token)
+        result["tokenFingerprint"] = fingerprint
+    return result
 
 
 @router.get("/api/seedr/auth-status")
@@ -903,7 +868,12 @@ async def seedr_auth_status():
         }
 
     try:
-        await seedr_request("/user")
+        # The old working integration treats a successful /user call as the
+        # authentication test. Do the same here; /user is explicitly documented
+        # by Seedr for Bearer-authenticated requests.
+        await seedr_request(
+            "/tasks" if _seedr_session_auth_mode(_seedr_request_session_id.get().strip()) == "pat" else "/user"
+        )
         return {
             "configured": True,
             "authenticated": True,
@@ -924,23 +894,42 @@ async def seedr_quota():
         return {"configured": False, "maxSpace": 0, "usedSpace": 0, "remainingSpace": 0}
 
     try:
-        result = seedr_data(await seedr_request("/me/quota"))
+        is_pat = _seedr_session_auth_mode(_seedr_request_session_id.get().strip()) == "pat"
+        result = seedr_data(await seedr_request("/fs/root/contents" if is_pat else "/user"))
         storage = result.get("account", {}).get("storage", {}) if isinstance(result, dict) else {}
         if not isinstance(storage, dict):
             storage = result.get("storage", {}) if isinstance(result, dict) else {}
         result_dict = result if isinstance(result, dict) else {}
-        max_space = int(float(
-            result_dict.get("space_max", 0)
-            or result_dict.get("max_space", 0)
-            or result_dict.get("maxSpace", 0)
-            or storage.get("limit", 0)
-        ))
-        used = int(float(
-            result_dict.get("space_used", 0)
-            or result_dict.get("used_space", 0)
-            or result_dict.get("usedSpace", 0)
-            or storage.get("used", 0)
-        ))
+        if is_pat:
+            max_space = int(float(
+                result_dict.get("space_max", 0)
+                or result_dict.get("max_space", 0)
+                or result_dict.get("maxSpace", 0)
+                or storage.get("limit", 0)
+            ))
+            used = int(float(
+                result_dict.get("space_used", 0)
+                or result_dict.get("used_space", 0)
+                or result_dict.get("usedSpace", 0)
+                or storage.get("used", 0)
+            ))
+        else:
+            max_space = int(float(
+                storage.get("limit")
+                or storage.get("max_space")
+                or storage.get("maxSpace")
+                or result_dict.get("max_space", 0)
+                or result_dict.get("space_max", 0)
+                or 0
+            ))
+            used = int(float(
+                storage.get("used")
+                or storage.get("used_space")
+                or storage.get("usedSpace")
+                or result_dict.get("used_space", 0)
+                or result_dict.get("space_used", 0)
+                or 0
+            ))
     except SeedrError:
         raise
     except Exception as exc:
@@ -1105,7 +1094,7 @@ async def seedr_add(request: Request):
     requested_folder = str(payload.get("folder_id") or "").strip()
     folder = int(requested_folder) if requested_folder.isdigit() else 0
     auto_cleanup = bool(payload.get("auto_cleanup"))
-    required_bytes = validate_seedr_torrent_size(payload.get("required_bytes"))
+    required_bytes = max(0, int(float(payload.get("required_bytes") or 0)))
 
     session_id = _seedr_request_session_id.get().strip()
     logger.info(
@@ -1138,19 +1127,14 @@ async def seedr_add(request: Request):
         deleted_folders.extend(await _prepare_seedr_space(required_bytes))
 
     try:
-        task = unwrap_seedr_task(
-            await add_task(raw_magnet, folder, torrent_size_bytes=required_bytes)
-        )
+        task = unwrap_seedr_task(await add_task(raw_magnet, folder))
     except SeedrError as exc:
         reason = str(exc.detail or "").lower()
         is_storage_shortage = (
-            exc.code != "TORRENT_SIZE_LIMIT_EXCEEDED"
-            and (
-                exc.status_code == 413
-                or "not enough space" in reason
-                or "insufficient storage" in reason
-                or "insufficient space" in reason
-            )
+            exc.status_code == 413
+            or "not enough space" in reason
+            or "insufficient storage" in reason
+            or "insufficient space" in reason
         )
         if not (is_storage_shortage and auto_cleanup and required_bytes > 0):
             logger.exception(
@@ -1174,9 +1158,7 @@ async def seedr_add(request: Request):
         )
         deleted_folders.extend(await _prepare_seedr_space(required_bytes, force_one=True))
         try:
-            task = unwrap_seedr_task(
-                await add_task(raw_magnet, folder, torrent_size_bytes=required_bytes)
-            )
+            task = unwrap_seedr_task(await add_task(raw_magnet, folder))
         except SeedrError as retry_exc:
             logger.exception(
                 "Seedr retry after storage cleanup failed: session=%s code=%s status=%s detail=%s",
@@ -1261,105 +1243,38 @@ def _remember_seedr_cleanup_folder(tid: str, folder_id: str) -> None:
     _save_seedr_cleanup_jobs()
 
 
-def _seedr_progress_poll_target(value: Any) -> tuple[str, str]:
-    if not isinstance(value, str) or not value.strip():
-        raise HTTPException(502, "Seedr did not return a task-progress polling URL.")
-
-    base = urlsplit(SEEDR_PAT_BASE)
-    target = urlsplit(urljoin(SEEDR_PAT_BASE.rstrip("/") + "/", value.strip()))
-    try:
-        target_port = target.port
-    except ValueError as exc:
-        raise HTTPException(502, "Seedr returned an invalid task-progress polling URL.") from exc
-
-    if (
-        target.scheme.lower() != "https"
-        or target.hostname != base.hostname
-        or target_port not in (None, 443)
-        or target.username is not None
-        or target.password is not None
-        or target.fragment
-        or not target.path
-    ):
-        raise HTTPException(502, "Seedr returned an invalid task-progress polling URL.")
-
-    path = target.path.lstrip("/")
-    if target.query:
-        path += "?" + target.query
-    return f"https://{target.netloc}", path
-
-
 @router.get("/api/seedr/tasks/{tid}/progress")
 async def seedr_task_progress(tid: str):
-    """Poll the progress URL, then read task state.
-
-    The available Console export says this endpoint returns a URL but omits
-    the response-body schema; accepting a direct URL string is therefore a
-    fail-closed implementation assumption, not a verified response contract.
-    """
+    """Fast polling endpoint: only fetch task state/progress from Seedr."""
     try:
-        polling_url = seedr_data(
-            await seedr_request(f"/tasks/{quote(tid)}/progress")
-        )
-        polling_origin, polling_path = _seedr_progress_poll_target(polling_url)
-        polling_host = (urlsplit(SEEDR_PAT_BASE).hostname or "").lower()
-        await seedr_request(
-            polling_path,
-            base_url=polling_origin,
-            allowed_redirect_hosts=frozenset({polling_host}),
-        )
         raw = seedr_data(await seedr_request(f"/tasks/{quote(tid)}"))
     except HTTPException as exc:
         if exc.status_code == 404:
             return {
                 "taskId": tid,
                 "status": "not_found",
-                "progress": None,
+                "progress": 0,
                 "name": "",
                 "folderId": "",
             }
         raise
 
-    task = unwrap_seedr_task(raw)
-    if not task:
-        raise HTTPException(502, "Seedr returned an invalid task-progress response.")
-
-    raw_progress = task.get("progress")
-    progress: float | None = None
-    if raw_progress is not None:
-        if isinstance(raw_progress, bool):
-            raise HTTPException(502, "Seedr returned an invalid task progress value.")
-        try:
-            progress = float(raw_progress)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(502, "Seedr returned an invalid task progress value.") from exc
-        if not math.isfinite(progress):
-            raise HTTPException(502, "Seedr returned an invalid task progress value.")
-        progress = max(0.0, min(100.0, progress))
-
-    state = str(task.get("state") or task.get("status") or task.get("phase") or "").strip().lower()
-    has_completion_flag = any(
-        key in task and isinstance(task[key], (bool, int, float))
-        for key in ("completed", "complete", "finished", "done", "is_completed", "isComplete")
+    task = (
+        raw.get("task")
+        if isinstance(raw, dict) and isinstance(raw.get("task"), dict)
+        else (raw if isinstance(raw, dict) else {})
     )
-    if not state and progress is None and not has_completion_flag:
-        raise HTTPException(
-            502,
-            "Seedr returned task details without a recognized progress or status value.",
-        )
-
-    failed = task_failed(task)
-    complete = not failed and task_complete(task)
+    progress = float(task.get("progress") or 0)
+    complete = task_complete(task)
     if complete:
         progress = 100
-    status = "failed" if failed else (
-        "completed" if complete else (
-            "waiting"
-            if state.replace("-", "_") in {"queued", "pending", "waiting", "paused", "stopped"}
-            else "downloading"
-        )
+
+    state = str(task.get("state") or task.get("status") or "").lower()
+    status = "completed" if complete else (
+        "waiting" if state in {"queued", "pending", "waiting", "paused", "stopped"} else "downloading"
     )
 
+    task_folder_id = seedr_task_folder_id(task)
     completed_files: list[dict[str, Any]] = []
     if complete:
         try:
@@ -1456,8 +1371,34 @@ async def seedr_folder_payload(folder_id: str) -> dict[str, Any]:
             return cached[1]
 
         try:
+            # Root access is inconsistent across Seedr API variants/accounts.
+            # Prefer the normal bearer-authenticated filesystem endpoint, then
+            # fall back to the dedicated root endpoint and finally the legacy
+            # list_contents endpoint. A failure in one variant must not be
+            # presented as a token failure when another variant works.
             if folder_id == "0":
-                payload = seedr_data(await seedr_request("/fs/root/contents"))
+                root_errors: list[str] = []
+
+                try:
+                    payload = seedr_data(await seedr_request("/fs/folder/0/contents"))
+                    logger.info("Seedr library root resolved via bearer fs endpoint")
+                except (HTTPException, SeedrError) as exc:
+                    root_errors.append(f"fs:{getattr(exc, 'status_code', 0)}")
+                    try:
+                        payload = seedr_data(await seedr_root_request())
+                        logger.info("Seedr library root resolved via dedicated root endpoint")
+                    except (HTTPException, SeedrError) as root_exc:
+                        root_errors.append(f"root:{getattr(root_exc, 'status_code', 0)}")
+                        try:
+                            payload = seedr_data(await legacy_seedr_list_contents("0"))
+                            logger.info("Seedr library root resolved via legacy list_contents endpoint")
+                        except (HTTPException, SeedrError) as legacy_exc:
+                            root_errors.append(f"legacy:{getattr(legacy_exc, 'status_code', 0)}")
+                            logger.warning(
+                                "Seedr library root resolution failed across all API variants: %s",
+                                ",".join(root_errors),
+                            )
+                            raise legacy_exc
             else:
                 payload = seedr_data(await seedr_request(f"/fs/folder/{quote(folder_id)}/contents"))
         except HTTPException as exc:
@@ -1857,10 +1798,13 @@ async def seedr_files():
 
 @router.get("/api/seedr/files/{file_id}/download/url")
 async def seedr_file_download_url(file_id: str):
+    # Resolve a fresh direct Seedr URL only when the user explicitly requests it.
     return await download_url(file_id)
 
 @router.get("/api/seedr/files/{file_id}/download")
 async def seedr_file_download(file_id: str):
+    # Redirect the browser to Seedr's temporary direct URL so large downloads
+    # do not flow through the Render Free instance.
     result = await download_url(file_id)
     return RedirectResponse(result["url"], status_code=307)
 
@@ -1926,11 +1870,14 @@ async def seedr_folder_download_url(folder_id: str) -> str:
 
 @router.get("/api/seedr/folders/{folder_id}/download/url")
 async def seedr_folder_download_url_api(folder_id: str):
+    # Resolve the temporary direct Seedr folder URL only on an explicit click.
     url = await seedr_folder_download_url(folder_id)
     return {"url": url}
 
 @router.get("/api/seedr/folders/{folder_id}/download")
 async def seedr_folder_download(folder_id: str):
+    # Redirect the browser to Seedr's temporary direct folder URL rather than
+    # streaming the archive through Render.
     url = await seedr_folder_download_url(folder_id)
     return RedirectResponse(url, status_code=307)
 
@@ -1967,6 +1914,15 @@ SEEDR_HLS_CACHE_SECONDS = 600
 _seedr_hls_sources: dict[str, tuple[float, str, set[str]]] = {}
 
 
+def _seedr_media_url(file_id: str, media_type: str) -> str:
+    if media_type == "video":
+        endpoint = f"/media/hls/{quote(file_id)}"
+    elif media_type == "audio":
+        endpoint = f"/media/mp3/{quote(file_id)}"
+    else:
+        raise HTTPException(400, "Unsupported Seedr media type")
+    return SEEDR_MEDIA_BASE.rstrip("/") + endpoint + "?access_token=" + quote(current_seedr_token(), safe="")
+
 def seedr_v2_bearer_token() -> str:
     """Accept a raw Seedr PAT or MediaFusion-style base64 JSON token."""
     raw = current_seedr_token().strip()
@@ -2001,13 +1957,9 @@ async def seedr_v2_request(path: str) -> Any:
     except Exception:
         data = raw
     if response.status_code >= 400:
-        detail = seedr_error_message(response.status_code, data, raw)
-        token = normalize_seedr_token(current_seedr_token())
-        if token:
-            detail = detail.replace(token, "[redacted]")
         raise HTTPException(
             response.status_code,
-            detail,
+            seedr_error_message(response.status_code, data, raw),
         )
     return data
 
@@ -2097,15 +2049,18 @@ async def _presentation_is_hls(url: str) -> bool:
         prefix = response.content[:2048].decode("utf-8", errors="ignore")
         return "mpegurl" in content_type or "#EXTM3U" in prefix
     except Exception as exc:
-        logger.info("Seedr presentation probe failed: %s", type(exc).__name__)
+        logger.info("Seedr presentation probe failed: %s", exc)
         return False
 
+
 async def _fetch_seedr_hls_manifest(file_id: str) -> tuple[str, str]:
-    """Resolve a browser-playable HLS manifest from documented Seedr V2 URLs."""
+    """Resolve a browser-playable HLS manifest from Seedr V2, then v1 fallback."""
     candidates: list[str] = []
     presentation_url = await seedr_v2_video_url(file_id)
     if presentation_url:
         candidates.append(presentation_url)
+    # Seedr's legacy HLS endpoint explicitly requests a converted browser stream.
+    candidates.append(_seedr_media_url(file_id, "video"))
 
     last_detail = "Seedr did not return an HLS manifest"
     for upstream_url in dict.fromkeys(candidates):
@@ -2116,7 +2071,7 @@ async def _fetch_seedr_hls_manifest(file_id: str) -> tuple[str, str]:
                     headers={"Accept": "application/vnd.apple.mpegurl,application/x-mpegURL,*/*"},
                 )
             if response.status_code >= 400:
-                last_detail = f"Seedr returned HTTP {response.status_code}"
+                last_detail = response.text[:500] or f"Seedr returned HTTP {response.status_code}"
                 continue
 
             content_type = str(response.headers.get("content-type") or "").lower()
@@ -2150,7 +2105,7 @@ async def _fetch_seedr_hls_manifest(file_id: str) -> tuple[str, str]:
             logger.info("Seedr HLS manifest resolved: file=%s source=%s", file_id, urlsplit(final_url).hostname)
             return text, final_url
         except Exception as exc:
-            last_detail = f"Seedr media request failed ({type(exc).__name__})"
+            last_detail = str(exc)
             continue
 
     raise HTTPException(502, last_detail)
@@ -2239,63 +2194,42 @@ async def seedr_file_stream(
         #      Range support;
         #   3) otherwise use the existing HLS proxy.
         presentation_url = await seedr_v2_video_url(resolved_id)
-        safe_presentation_url = _safe_external_playback_url(presentation_url)
         if presentation_url and not await _presentation_is_hls(presentation_url):
-            result = {
+            return {
                 "url": "/api/seedr/media/video/" + quote(resolved_id, safe=""),
+                "externalUrl": presentation_url,
                 "name": name or resolved_id,
                 "resolvedFileId": resolved_id,
                 "protocol": "direct",
             }
-            if safe_presentation_url:
-                result["externalUrl"] = safe_presentation_url
-            return result
 
         try:
             await _fetch_seedr_hls_manifest(resolved_id)
-            result = {
+            return {
                 "url": "/api/seedr/hls/" + quote(resolved_id, safe=""),
+                "externalUrl": presentation_url or _seedr_media_url(resolved_id, "video"),
                 "name": name or resolved_id,
                 "resolvedFileId": resolved_id,
                 "protocol": "hls",
             }
-            if safe_presentation_url:
-                result["externalUrl"] = safe_presentation_url
-            return result
         except HTTPException:
             if presentation_url:
-                result = {
+                return {
                     "url": "/api/seedr/media/video/" + quote(resolved_id, safe=""),
+                    "externalUrl": presentation_url,
                     "name": name or resolved_id,
                     "resolvedFileId": resolved_id,
                     "protocol": "direct",
                 }
-                if safe_presentation_url:
-                    result["externalUrl"] = safe_presentation_url
-                return result
             raise
+
     return {
         "url": "/api/seedr/media/audio/" + quote(resolved_id, safe=""),
+        "externalUrl": _seedr_media_url(resolved_id, "audio"),
         "name": name or resolved_id,
         "resolvedFileId": resolved_id,
         "protocol": "mp3",
     }
-
-
-def _safe_external_playback_url(value: str) -> str:
-    target = str(value or "").strip()
-    parsed = urlsplit(target)
-    if (
-        parsed.scheme.lower() != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        return ""
-    return target
-
 
 @router.get("/api/seedr/hls/{file_id}")
 async def seedr_hls_manifest(file_id: str):

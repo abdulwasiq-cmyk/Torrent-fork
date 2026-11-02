@@ -27,8 +27,9 @@ CATALOGUES = (
 TARGET_PER_CATALOGUE = int(os.getenv("REGIONAL_CACHE_MOVIES_PER_CATALOGUE", "50"))
 PAGE_LIMIT = int(os.getenv("REGIONAL_CACHE_PAGES", "30"))
 TORRENT_LIMIT = 50
-# Torrent discovery is opt-in and belongs to the independent torrent refresh workflow.
-TORRENT_SCAN = os.getenv("REGIONAL_CACHE_TORRENT_SCAN", "false").strip().lower() not in ("0", "false", "no", "off")
+# Set REGIONAL_CACHE_TORRENT_SCAN=false to refresh only catalogue pages and keep the
+# torrent matches from the previous build (torrent sites are slow/blocked on CI runners).
+TORRENT_SCAN = os.getenv("REGIONAL_CACHE_TORRENT_SCAN", "true").strip().lower() not in ("0", "false", "no", "off")
 MAX_SIZE = 5 * 1024**3
 # Same lower bound the app applies when it reads saved torrents; a row below it would be hidden anyway.
 MIN_SIZE = int(os.getenv("REGIONAL_CACHE_MIN_SIZE_MB", "100")) * 1024**2

@@ -50,10 +50,6 @@ else:
 # CACHE_FIRST=false to get the older "expire and refresh" behaviour back. A user-triggered
 # refresh (force=true, "clear TMDB cache") still bypasses the cache on purpose.
 CACHE_FIRST = os.getenv("CACHE_FIRST", "true").strip().casefold() not in {"0", "false", "no", "off"}
-# Provider torrent searches are independently controllable from metadata refreshes.
-TORRENT_SEARCH_ENABLED = os.getenv("TORRENT_SEARCH_ENABLED", "true").strip().casefold() not in {
-    "0", "false", "no", "off",
-}
 _CACHE_FOREVER_SECONDS = 20 * 365 * 24 * 60 * 60
 
 
@@ -74,15 +70,6 @@ BACKFILL_MISSING_METADATA = (
 # One place for the runtime data directory (Render: mount a disk and set APP_DATA_DIR).
 # Individual files can still be overridden with their own environment variable.
 DATA_DIR = Path(os.getenv("APP_DATA_DIR", "/app/data"))
-TORRENT_CACHE_DIR = Path(
-    os.getenv("TORRENT_CACHE_DIR", str(DATA_DIR / "torrent-cache"))
-)
-TORRENT_CACHE_SEED_DIR = Path(
-    os.getenv(
-        "TORRENT_CACHE_SEED_DIR",
-        str(Path(__file__).resolve().parents[1] / "cache-seed"),
-    )
-)
 
 
 def data_file(name: str) -> str:
@@ -187,7 +174,7 @@ GITHUB_FEEDBACK_TOKEN = os.getenv("GITHUB_FEEDBACK_TOKEN", "").strip()
 GITHUB_FEEDBACK_REPO = os.getenv("GITHUB_FEEDBACK_REPO", "wroxtaaar/new-test").strip()
 SEEDR_BASE = "https://www.seedr.cc/api/v0.1/p"
 SEEDR_MEDIA_BASE = "https://www.seedr.cc/api"
-SEEDR_V2_BASE = SEEDR_BASE
+SEEDR_V2_BASE = "https://v2.seedr.cc/api/v0.1/p"
 SEEDR_PAT_BASE = "https://www.seedr.cc/api/v0.1/p"
 # Legacy developer-level Seedr credentials remain supported only when explicitly enabled.
 # Normal requests use a per-browser Seedr connection established through device auth.

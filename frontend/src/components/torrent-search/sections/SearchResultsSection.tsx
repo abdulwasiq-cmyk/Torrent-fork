@@ -2,49 +2,22 @@ import { api } from '../../../api/client.ts';
 import { formatBytes } from '../../../utils/formatters.ts';
 import { TvShowCard } from '../TvShowCard.tsx';
 import { MovieCompactCard, MoviePrepareCard, imdbTitleLink } from '../../MovieCards.tsx';
-import { compareReleaseDateDescending, episodeSeriesTitle, releaseDateSortValue, imdbRatingKey, normalizeGroupTitle, normalizeSavedOttTitle, searchMetadataForGroup, torrentMediaIdentity, torrentQualityDetails, torrentResultKey } from '../grouping.ts';
-import { savedOttAvailabilityForMovie, toCardProviders, uniqueOttProviders } from '../ottProviders.ts';
+import { compareReleaseDateDescending, episodeSeriesTitle, releaseDateSortValue, imdbRatingKey, normalizeGroupTitle, normalizeSavedOttTitle, searchMetadataForGroup, torrentQualityDetails, torrentResultKey } from '../grouping.ts';
+import { toCardProviders, uniqueOttProviders } from '../ottProviders.ts';
 import { normalizeTorrentTitleForNexStream } from '../nexstream.ts';
 import { lowQualityPosterUrl, posterImageUrlForResult, posterKeyFor } from '../posterUrls.ts';
 import { extractedQuality } from '../helpers.ts';
-import { cataloguePosterSource } from '../cataloguePosters.ts';
 import { classicsComparator, ratingValue } from '../classicsSort.ts';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
 import { isAnimeCatalogue } from '../yenime.ts';
-import { franchiseCatalogueSection, franchiseMovieCardsForPage, matchesMarvelFilmFilter, tvCataloguePageFromSectionCache } from '../../../api/sectionCache.ts';
+import { tvCataloguePageFromSectionCache } from '../../../api/sectionCache.ts';
 
 export function SearchResultsSection({ vm }: { vm: PanelModel }) {
   const isRegionalTvView = ['hollywood', 'bollywood', 'korean', 'pakistani', 'anime'].includes(vm.activeTopSection || '')
     && vm.regionalContentTabs[vm.activeTopSection as keyof typeof vm.regionalContentTabs] === 'web-series';
   if (isRegionalTvView) return null;
 
-  const { activeFranchiseSearchMode, activeTopSection, catalogueExpectedTitles, cataloguePosterUrlsRef, classicsContentTab, classicsSort, dcWebSeriesCatalogue, dcWebSeriesError, dcWebSeriesLoading, error, expandedSearchGroupKey, franchiseGridPage, franchiseGridPageSize, franchiseMovieCardsByMode, groupedResults, imdbRatingsByKey, isMarvelEnglishResults, isSearching, loadDcWebSeriesPage, marvelFilmFilter, marvelWebSeriesCatalogue, marvelWebSeriesError, marvelWebSeriesLoading, metadataPosterFailed, movieCatalogue, movieTorrentPreviewGroup, movieTorrentSearchError, movieTorrentSearchLoading, movieTorrentSearchTitle, nexStreamLoading, nexStreamLoadingTitle, nexStreamResolvingId, nexStreamResults, onPlaySeedrFile, openYenimeRequest, pendingPosterAction, playCatalogueTvWithNexStream, playWithNexStream, playingTorrentKey, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, prepareBuildPendingRef, prepareMovieTorrent, prepareStateFor, preparedActionsFor, preparedForResult, preparingTorrentKey, prepareClickIntentRef, prepareTraceIdRef, regionalWebSeriesCatalogue, regionalWebSeriesError, regionalWebSeriesLoading, renderFranchisePagination, results, searchAvailabilityByGroup, searchMetadata, searchMetadataStatus, searchNexStreamTitles, searchMovieTorrents, searchPosterUrlsRef, selectedMovieTorrentQualityByGroup, selectedQualityByGroup, setExpandedSearchGroupKey, setMarvelWebSeriesCatalogue, setMarvelWebSeriesError, setMarvelWebSeriesLoading, setMetadataPosterFailed, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setPlayingTorrentKey, setRegionalWebSeriesCatalogue, setRegionalWebSeriesError, setRegionalWebSeriesLoading, setSelectedMovieTorrentQualityByGroup, setSelectedQualityByGroup, showDcWebSeries, showMarvelWebSeries, sortedResults, startPosterBackgroundWorkers } = vm;
-  const isSectionBackedMovieView = activeFranchiseSearchMode &&
-    franchiseCatalogueSection(activeFranchiseSearchMode) &&
-    !showMarvelWebSeries &&
-    !showDcWebSeries &&
-    !(activeTopSection === 'classics' && classicsContentTab !== 'movies');
-  const sectionMovieCards = isSectionBackedMovieView
-    ? franchiseMovieCardsByMode[activeFranchiseSearchMode] || []
-    : null;
-  const sortedSectionMovieCards = sectionMovieCards === null ? null : sectionMovieCards
-    .filter(card => !isMarvelEnglishResults || showMarvelWebSeries ||
-      matchesMarvelFilmFilter(card.title, card.year, marvelFilmFilter))
-    .sort(classicsComparator(
-      classicsSort,
-      card => releaseDateSortValue(card),
-      card => {
-        return ratingValue(card) ??
-          ratingValue(imdbRatingsByKey[imdbRatingKey(card.title, card.year, 'movie')]);
-      },
-      card => card.title,
-    ));
-  const visibleSectionMovieCards = sortedSectionMovieCards === null
-    ? null
-    : franchiseMovieCardsForPage(sortedSectionMovieCards, franchiseGridPage, franchiseGridPageSize);
-  const visibleMovieGroups = sortedSectionMovieCards === null
-    ? groupedResults.slice((franchiseGridPage - 1) * franchiseGridPageSize, franchiseGridPage * franchiseGridPageSize)
-    : [];
+  const { activeTopSection, catalogueExpectedTitles, classicsContentTab, classicsSort, dcWebSeriesCatalogue, dcWebSeriesError, dcWebSeriesLoading, error, expandedSearchGroupKey, franchiseGridPage, franchiseGridPageSize, groupedResults, imdbRatingsByKey, isSearching, loadDcWebSeriesPage, marvelWebSeriesCatalogue, marvelWebSeriesError, marvelWebSeriesLoading, metadataPosterFailed, movieCatalogue, movieTorrentPreviewGroup, nexStreamLoading, nexStreamLoadingTitle, nexStreamResolvingId, nexStreamResults, onPlaySeedrFile, openYenimeRequest, pendingPosterAction, playCatalogueTvWithNexStream, playWithNexStream, playingTorrentKey, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, prepareMovieTorrent, prepareStateFor, preparedActionsFor, preparedForResult, preparingTorrentKey, regionalWebSeriesCatalogue, regionalWebSeriesError, regionalWebSeriesLoading, renderFranchisePagination, results, searchAvailabilityByGroup, searchMetadata, searchMetadataStatus, searchNexStreamTitles, searchPosterUrlsRef, selectedMovieTorrentQualityByGroup, selectedQualityByGroup, setExpandedSearchGroupKey, setMarvelWebSeriesCatalogue, setMarvelWebSeriesError, setMarvelWebSeriesLoading, setMetadataPosterFailed, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setPlayingTorrentKey, setRegionalWebSeriesCatalogue, setRegionalWebSeriesError, setRegionalWebSeriesLoading, setSelectedMovieTorrentQualityByGroup, setSelectedQualityByGroup, showDcWebSeries, showMarvelWebSeries, sortedResults, startPosterBackgroundWorkers } = vm;
   const renderDcWebSeriesPagination = () => {
     if (!dcWebSeriesCatalogue || dcWebSeriesCatalogue.totalPages <= 1) return null;
     const page = dcWebSeriesCatalogue.page;
@@ -59,32 +32,18 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
   };
   return (
     <>
-      {(results.length > 0 || sectionMovieCards !== null || regionalWebSeriesLoading || Boolean(regionalWebSeriesError) || Boolean(regionalWebSeriesCatalogue) || showDcWebSeries || (activeTopSection === 'classics' && classicsContentTab !== null)) && (
+      {(results.length > 0 || regionalWebSeriesLoading || Boolean(regionalWebSeriesError) || Boolean(regionalWebSeriesCatalogue) || showDcWebSeries || (activeTopSection === 'classics' && classicsContentTab !== null)) && (
         <div className="space-y-2">
           <div className="px-1 text-[11px] text-slate-500">Use the subsection buttons above to switch catalogue views.</div>
 
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="text-xs text-slate-400">
-              {sectionMovieCards !== null
-                ? `${(catalogueExpectedTitles || sectionMovieCards.length).toLocaleString()} catalogue titles · ${(sortedSectionMovieCards?.length || 0).toLocaleString()} match current filters · ${(visibleSectionMovieCards?.length || 0).toLocaleString()} on this page · cached torrent options load when a title is prepared`
-                : activeFranchiseSearchMode && catalogueExpectedTitles > 0
-                ? `${catalogueExpectedTitles.toLocaleString()} catalogue titles · ${sortedResults.length} torrent options loaded`
-                : `${groupedResults.length} titles · ${sortedResults.length} torrent options`}
+              {groupedResults.length} titles · {sortedResults.length} torrent options
             </div>
           </div>
           {pendingPosterAction?.kind === 'search' && (
             <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-400">
               Loading the visible posters before opening this card…
-            </div>
-          )}
-          {sectionMovieCards !== null && movieTorrentSearchLoading && (
-            <div className="rounded-xl border border-cyan-500/30 bg-slate-950 px-3 py-2 text-xs text-slate-300">
-              Loading cached torrent options for {movieTorrentSearchTitle}…
-            </div>
-          )}
-          {sectionMovieCards !== null && movieTorrentSearchError && (
-            <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-              {movieTorrentSearchError}
             </div>
           )}
 
@@ -211,39 +170,11 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
               </div>
               {(() => {
                 const group = movieTorrentPreviewGroup;
-                if (group.variants.length === 0) {
-                  const item = group.posterResult;
-                  const tmdbId = Number(item?.tmdbId || item?.id);
-                  return (
-                    <div className="flex items-center justify-between gap-3 p-3">
-                      <span className="text-xs text-slate-400">No cached torrent options are available for this title.</span>
-                      <button
-                        type="button"
-                        disabled={!Number.isInteger(tmdbId) || tmdbId <= 0 || nexStreamResolvingId === 'movie:' + String(tmdbId)}
-                        onClick={() => {
-                          if (!Number.isInteger(tmdbId) || tmdbId <= 0) return;
-                          void playWithNexStream({
-                            id: tmdbId,
-                            title: item?.title || group.title,
-                            date: item?.releaseDate || (item?.year ? String(item.year) : ''),
-                            overview: item?.overview || '',
-                            poster: item?.posterUrl || null,
-                            type: 'movie',
-                          }, undefined, undefined, false, 'nexstream');
-                        }}
-                        className="rounded-lg border border-violet-400/50 bg-violet-500/15 px-4 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-50"
-                      >
-                        NexStream
-                      </button>
-                    </div>
-                  );
-                }
                 const selectedKey = selectedMovieTorrentQualityByGroup[group.key] || torrentResultKey(group.variants[0]);
                 const result = group.variants.find(variant => torrentResultKey(variant) === selectedKey) || group.variants[0];
-                const prepareState = prepareStateFor(result);
-                const source = prepareState.source;
-                const torrentKey = prepareState.torrentKey;
-                const isPreparing = prepareState.isPreparing;
+                const source = result.magnetUrl || result.downloadUrl || result.sourceUrl;
+                const torrentKey = result.infoHash || source || result.title;
+                const isPreparing = preparingTorrentKey === torrentKey;
                 const preparedFiles = preparedForResult(result);
                 const primaryFile = preparedFiles.find(file => /\\.(mkv|mp4|m4v|webm|mov|avi|m3u8|ts|mp3|wav|flac|aac|ogg|m4a)$/i.test(file.name)) || preparedFiles[0];
                 const qualityLabel = torrentQualityDetails(result).label;
@@ -265,78 +196,20 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                       ) : (
                         <button type="button" onClick={() => void prepareMovieTorrent(result)} disabled={!source || isPreparing} className="rounded-lg bg-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-400 disabled:opacity-50">{isPreparing ? 'Preparing…' : 'Prepare'}</button>
                       )}
-                      <button type="button" disabled={!Number(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id) || nexStreamResolvingId === 'movie:' + String(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id)} onClick={() => { const item = movieTorrentPreviewGroup.posterResult; const tmdbId = Number(item?.tmdbId || item?.id); if (!Number.isInteger(tmdbId) || tmdbId <= 0) { setNexStreamError('This catalogue card has no valid TMDB ID for NexStream.'); return; } void playWithNexStream({ id: tmdbId, title: item.title || movieTorrentPreviewGroup.title, date: item.releaseDate || (item.year ? String(item.year) : ''), overview: item.overview || '', poster: item.posterUrl || null, type: 'movie' }, undefined, undefined, false, 'nexstream'); }} className="rounded-lg border border-violet-400/50 bg-violet-500/15 px-4 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-50">{nexStreamResolvingId?.startsWith('movie:') ? 'Resolving…' : 'NexStream'}</button>
+                      <button type="button" disabled={!Number(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id) || nexStreamResolvingId === 'movie:' + String(movieTorrentPreviewGroup.posterResult?.tmdbId || movieTorrentPreviewGroup.posterResult?.id)} onClick={() => { const item = movieTorrentPreviewGroup.posterResult; const tmdbId = Number(item?.tmdbId || item?.id); if (!Number.isInteger(tmdbId) || tmdbId <= 0) { setNexStreamError('This catalogue card has no valid TMDB ID for NexStream.'); return; } void playWithNexStream({ id: tmdbId, title: item.title || movieTorrentPreviewGroup.title, date: item.releaseDate || (item.year ? String(item.year) : ''), overview: item.overview || '', poster: item.posterUrl || null, type: 'movie' }); }} className="rounded-lg border border-violet-400/50 bg-violet-500/15 px-4 py-2 text-xs font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-50">{nexStreamResolvingId?.startsWith('movie:') ? 'Resolving…' : 'NexStream'}</button>
                     </div>
                   </div>
                 );
               })()}
             </section>
           )}
-          {!isSearching && renderFranchisePagination(
-            sortedSectionMovieCards === null
-              ? Math.max(groupedResults.length, catalogueExpectedTitles)
-              : sortedSectionMovieCards.length
-          )}
+          {!isSearching && renderFranchisePagination(Math.max(groupedResults.length, catalogueExpectedTitles))}
           <div
             className="grid grid-cols-2 items-stretch gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 lg:rounded-2xl lg:border-0 lg:bg-transparent lg:gap-4 lg:w-full lg:max-w-none lg:mx-0 lg:p-0 lg:divide-y-0 lg:overflow-visible"
           >
-            {visibleSectionMovieCards !== null ? visibleSectionMovieCards.map((movie, index) => {
-              const imdb = imdbRatingsByKey[imdbRatingKey(movie.title, movie.year)] || {
-                imdbRating: movie.imdbRating,
-                imdbVotes: movie.imdbVotes,
-                imdbId: movie.imdbId,
-                imdbUrl: movie.imdbUrl,
-              };
-              const savedOtt = savedOttAvailabilityForMovie(movie);
-              const providers = uniqueOttProviders([
-                ...(savedOtt?.streamingProviders || []),
-                ...(savedOtt?.rentProviders || []),
-                ...(savedOtt?.buyProviders || []),
-              ]);
-              return (
-                <MovieCompactCard
-                  key={movie.key}
-                  title={movie.title}
-                  titleHref={imdbTitleLink(imdb, movie.title, movie.year)}
-                  year={movie.year}
-                  imdb={imdb}
-                  tmdbRating={movie.rating}
-                  overview={movie.overview || 'No synopsis available from the section cache.'}
-                  posterSrc={lowQualityPosterUrl(movie.posterUrl || cataloguePosterSource(movie), 'w185')}
-                  posterAlt={movie.title}
-                  onPosterClick={() => {
-                    if (isSearching || movieTorrentSearchLoading || pendingPosterAction || prepareBuildPendingRef.current) return;
-                    const traceId = `prep-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-                    prepareClickIntentRef.current = true;
-                    prepareTraceIdRef.current = traceId;
-                    console.info('[PREPARE_TRACE]', JSON.stringify({
-                      event: 'explicit-card-click',
-                      traceId,
-                      title: movie.title,
-                      year: movie.year || null,
-                      at: new Date().toISOString(),
-                    }));
-                    void searchMovieTorrents(movie);
-                  }}
-                  onPosterLoad={event => {
-                    cataloguePosterUrlsRef.current[String(movie.id)] = event.currentTarget.currentSrc || event.currentTarget.src;
-                    event.currentTarget.style.display = '';
-                    event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.add('hidden');
-                  }}
-                  onPosterError={event => {
-                    event.currentTarget.style.display = 'none';
-                    event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.remove('hidden');
-                  }}
-                  providers={toCardProviders(providers)}
-                  providersAriaLabel={'Streaming services for ' + movie.title}
-                  providersFallbackText={savedOtt?.status === 'not_confirmed'
-                    ? 'Streaming providers not confirmed'
-                    : 'Streaming providers not listed'}
-                />
-              );
-            }) : visibleMovieGroups.map((group, index) => {
+            {groupedResults.slice((franchiseGridPage - 1) * franchiseGridPageSize, franchiseGridPage * franchiseGridPageSize).map((group, index) => {
               const selectedKey = selectedQualityByGroup[group.key];
-              const result = group.variants.find(variant => torrentResultKey(variant) === selectedKey) || group.variants[0] || group.posterResult;
+              const result = group.variants.find(variant => torrentResultKey(variant) === selectedKey) || group.variants[0];
               const posterResult = group.posterResult;
               const normalizedCardTitle = normalizeTorrentTitleForNexStream(group.title);
               const cardYear = Number((group.title.match(/\\b((?:19|20)\\d{2})\\b/) || [])[1] || group.year || 0);
@@ -383,136 +256,113 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                 posterOverrides[groupPosterKey] ||
                 posterResult?.posterUrl ||
                 posterImageUrlForResult(posterResult);
-              const groupIdentity = torrentMediaIdentity(posterResult);
-              const groupAvailabilityKey = `${groupIdentity.normalized}|${groupIdentity.year || 'unknown'}`;
 
-              const isExpanded = expandedSearchGroupKey === group.key;
-              const availability = searchAvailabilityByGroup[group.key] || searchAvailabilityByGroup[groupAvailabilityKey];
-              const providerMatchTitle = episodeSeriesTitle(group.title) || group.title;
-              const groupTitleKey = normalizeSavedOttTitle(providerMatchTitle);
-              const matchingSavedTitles = (availability?.matches || []).filter(match =>
-                Array.isArray(match.providers) &&
-                match.providers.length > 0 &&
-                normalizeSavedOttTitle(String(match.title || '')) === groupTitleKey
-              );
-              const compactProviders = uniqueOttProviders(
-                matchingSavedTitles.length > 0
-                  ? matchingSavedTitles.flatMap(match => match.providers)
-                  : (availability?.providers || [])
-              );
+              // Normal searches use a poster-first two-state card. Clicking the poster
+              // opens the Prepare/details card; clicking it again returns here.
+              if (expandedSearchGroupKey !== group.key) {
+                const availability = searchAvailabilityByGroup[group.key];
+                const providerMatchTitle = episodeSeriesTitle(group.title) || group.title;
+                const groupTitleKey = normalizeSavedOttTitle(providerMatchTitle);
+                const matchingSavedTitles = (availability?.matches || []).filter(match =>
+                  Array.isArray(match.providers) &&
+                  match.providers.length > 0 &&
+                  normalizeSavedOttTitle(String(match.title || '')) === groupTitleKey
+                );
+                const compactProviders = uniqueOttProviders(
+                  matchingSavedTitles.length > 0
+                    ? matchingSavedTitles.flatMap(match => match.providers)
+                    : (availability?.providers || [])
+                );
+                return (
+                  <MovieCompactCard
+                    key={group.key || (group.title + '-' + index)}
+                    title={mediaDisplayTitle}
+                    titleHref={imdbTitleHref}
+                    year={mediaDisplayYear}
+                    imdb={displayImdbRating}
+                    tmdbRating={mediaMetadata?.rating}
+                    overview={
+                      mediaMetadata?.overview ||
+                      (searchMetadataStatus === 'loading'
+                        ? 'Loading synopsis from TMDB…'
+                        : searchMetadataStatus === 'unavailable'
+                          ? 'TMDB synopsis is temporarily unavailable.'
+                          : 'No synopsis available from TMDB for this title.')
+                    }
+                    posterSrc={lowQualityPosterUrl(sharedPosterUrl)}
+                    posterAlt={mediaDisplayTitle}
+                    onPosterClick={() => {
+                      if (pendingPosterAction) return;
+                      if (!posterFirstPageReadyRef.current) {
+                        setPendingPosterAction({
+                          kind: 'search',
+                          groupKey: group.key,
+                          page: franchiseGridPage,
+                        });
+                        return;
+                      }
+                      setExpandedSearchGroupKey(group.key);
+                    }}
+                    onPosterLoad={event => {
+                      const key = posterKeyFor(posterResult);
+                      searchPosterUrlsRef.current[key] = event.currentTarget.currentSrc || event.currentTarget.src;
+                      posterLoadedRef.current.add(key);
+                      event.currentTarget.style.display = '';
+                      event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.add('hidden');
+                    }}
+                    onPosterError={event => {
+                      const image = event.currentTarget;
+                      // Do not fall back to catalogue artwork here: metadata sources can
+                      // attach a poster for a different title/remake. Retry the strict
+                      // title-and-year resolver instead.
+                      const key = posterKeyFor(posterResult);
+                      delete searchPosterUrlsRef.current[key];
+                      posterLoadedRef.current.delete(key);
+                      setMetadataPosterFailed(previous => previous[key] ? previous : { ...previous, [key]: true });
+                      image.style.display = 'none';
+                      image.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.remove('hidden');
+
+                      // Match the expanded card's retry path; do not leave a blank black poster
+                      // slot just because the first image request failed.
+                      if (!posterBackgroundQueuedRef.current.has(key)) {
+                        posterBackgroundQueuedRef.current.add(key);
+                        posterBackgroundQueueRef.current.unshift({ key, result: posterResult });
+                        startPosterBackgroundWorkers();
+                      }
+                    }}
+                    providers={toCardProviders(compactProviders)}
+                    providersAriaLabel={'Streaming services for ' + group.title}
+                    providersFallbackText={
+                      availability?.status === 'loading'
+                        ? 'Checking streaming services…'
+                        : availability?.status === 'unavailable'
+                          ? 'Streaming availability temporarily unavailable'
+                          : availability?.status === 'not_confirmed'
+                            ? 'Streaming providers not confirmed'
+                            : availability?.status === 'ready'
+                              ? 'No streaming providers reported'
+                              : searchMetadataStatus === 'loading'
+                                ? 'Checking streaming availability…'
+                                : 'Streaming providers not listed'
+                    }
+                  />
+                );
+              }
+
               const prepareState = prepareStateFor(result);
               return (
-                <MovieCompactCard
+                <MoviePrepareCard
                   key={group.key || (group.title + '-' + index)}
-                  expanded={isExpanded}
-                  expandedContent={(
-                    <MoviePrepareCard
-                      contentOnly
-                      posterSrc=""
-                      posterAlt={group.title}
-                      providers={toCardProviders(uniqueOttProviders(
-                        (availability?.matches || [])
-                          .filter(match => Array.isArray(match.providers) && match.providers.length > 0 &&
-                            normalizeSavedOttTitle(String(match.title || '')) === groupTitleKey)
-                          .flatMap(match => match.providers)
-                      ))}
-                      onPosterClick={() => setExpandedSearchGroupKey(null)}
-                      onPosterLoad={() => {}}
-                      onPosterError={() => {}}
-                      imdb={displayImdbRating}
-                      seeders={result.seeders}
-                      indexer={result.indexer}
-                      quality={extractedQuality(result)}
-                      title={mediaDisplayTitle}
-                      titleHref={imdbTitleHref}
-                      year={mediaMetadata?.year || group.year}
-                      onClose={() => setExpandedSearchGroupKey(null)}
-                      variants={group.variants.map(variant => {
-                        const quality = torrentQualityDetails(variant);
-                        const provider = String(variant.indexer || '').trim();
-                        const size = formatBytes(Number(variant.size) || 0);
-                        const seeds = Number(variant.seeders) || 0;
-                        return {
-                          key: torrentResultKey(variant),
-                          label: `${quality.label} · ${size} · ▲${seeds}${provider ? ` · ${provider}` : ''}`,
-                        };
-                      })}
-                      selectedVariantKey={torrentResultKey(result)}
-                      onSelectVariant={key => setSelectedQualityByGroup(previous => ({ ...previous, [group.key]: key }))}
-                      variantsAriaLabel={`Choose quality for ${group.title}`}
-                      prepared={prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
-                      prepare={{
-                        isPreparing: prepareState.isPreparing,
-                        disabled: !prepareState.source || prepareState.isPreparing,
-                        onClick: () => void prepareMovieTorrent(result),
-                      }}
-                      directStream={{
-                        disabled: nexStreamResolvingId !== null || (nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)),
-                        label: nexStreamResolvingId !== null
-                          ? 'Resolving…'
-                          : nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)
-                            ? 'Searching…'
-                            : 'Direct Stream',
-                        onClick: () => {
-                          if (titleMatches.length > 0) {
-                            void playWithNexStream(titleMatches[0]);
-                            return;
-                          }
-                          const tmdbId = Number(mediaMetadata?.tmdbId || mediaMetadata?.id);
-                          if (Number.isInteger(tmdbId) && tmdbId > 0) {
-                            void playWithNexStream({
-                              id: tmdbId,
-                              title: mediaDisplayTitle || group.title,
-                              date: String(mediaMetadata?.year || group.year || ''),
-                              overview: mediaMetadata?.overview || '',
-                              poster: mediaMetadata?.posterUrl || null,
-                              type: 'movie',
-                            });
-                          } else {
-                            void searchNexStreamTitles(mediaDisplayTitle || group.title, 'movie');
-                          }
-                        },
-                      }}
-                    />
-                  )}
-                  posterBadges={(
-                    <>
-                      {Number(result.seeders) > 0 && <span className={'absolute left-2 rounded-md bg-black/80 px-2 py-1 text-[10px] font-bold text-emerald-400 ' + (displayImdbRating?.imdbRating ? 'top-10' : 'top-2')}>{result.seeders} seeds</span>}
-                      {result.indexer && <span className="absolute right-2 top-2 max-w-[70%] truncate rounded-md bg-black/75 px-2 py-1 text-[10px] font-medium text-slate-300">{result.indexer}</span>}
-                      {extractedQuality(result) && <span className="absolute left-2 bottom-2 rounded-md border border-cyan-400/30 bg-slate-950/85 px-2 py-1 text-[10px] font-bold text-cyan-300">{extractedQuality(result)}</span>}
-                    </>
-                  )}
-                  title={mediaDisplayTitle}
-                  titleHref={imdbTitleHref}
-                  year={mediaDisplayYear}
-                  imdb={displayImdbRating}
-                  tmdbRating={mediaMetadata?.rating}
-                  overview={
-                    mediaMetadata?.overview ||
-                    (searchMetadataStatus === 'loading'
-                      ? 'Loading synopsis from TMDB…'
-                      : searchMetadataStatus === 'unavailable'
-                        ? 'TMDB synopsis is temporarily unavailable.'
-                        : 'No synopsis available from TMDB for this title.')
-                  }
-                  posterSrc={lowQualityPosterUrl(sharedPosterUrl)}
-                  posterAlt={mediaDisplayTitle}
-                  onPosterClick={() => {
-                    if (isExpanded) {
-                      setExpandedSearchGroupKey(null);
-                      return;
-                    }
-                    if (pendingPosterAction) return;
-                    if (!posterFirstPageReadyRef.current) {
-                      setPendingPosterAction({
-                        kind: 'search',
-                        groupKey: group.key,
-                        page: franchiseGridPage,
-                      });
-                      return;
-                    }
-                    setExpandedSearchGroupKey(group.key);
-                  }}
+                  className="z-0"
+                  posterSrc={loadedSearchPosterUrl || lowQualityPosterUrl(sharedPosterUrl)}
+                  posterAlt={group.title}
+                  providers={toCardProviders(uniqueOttProviders(
+                    (searchAvailabilityByGroup[group.key]?.matches || [])
+                      .filter(match => Array.isArray(match.providers) && match.providers.length > 0 &&
+                        normalizeSavedOttTitle(String(match.title || '')) === normalizeSavedOttTitle(episodeSeriesTitle(group.title) || group.title))
+                      .flatMap(match => match.providers)
+                  ))}
+                  onPosterClick={() => setExpandedSearchGroupKey(null)}
                   onPosterLoad={event => {
                     const key = posterKeyFor(posterResult);
                     searchPosterUrlsRef.current[key] = event.currentTarget.currentSrc || event.currentTarget.src;
@@ -537,30 +387,65 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                       startPosterBackgroundWorkers();
                     }
                   }}
-                  providers={toCardProviders(compactProviders)}
-                  providersAriaLabel={'Streaming services for ' + group.title}
-                  providersFallbackText={
-                    availability?.status === 'loading'
-                      ? 'Checking streaming services…'
-                      : availability?.status === 'unavailable'
-                        ? 'Streaming availability temporarily unavailable'
-                        : availability?.status === 'not_confirmed'
-                          ? 'Streaming providers not confirmed'
-                          : availability?.status === 'ready'
-                            ? 'No streaming providers reported'
-                            : searchMetadataStatus === 'loading'
-                              ? 'Checking streaming availability…'
-                              : 'Streaming providers not listed'
-                  }
+                  imdb={displayImdbRating}
+                  seeders={result.seeders}
+                  indexer={result.indexer}
+                  quality={extractedQuality(result)}
+                  title={mediaDisplayTitle}
+                  titleHref={imdbTitleHref}
+                  year={mediaMetadata?.year || group.year}
+                  onClose={() => setExpandedSearchGroupKey(null)}
+                  variants={group.variants.map(variant => {
+                    const quality = torrentQualityDetails(variant);
+                    const provider = String(variant.indexer || '').trim();
+                    const size = formatBytes(Number(variant.size) || 0);
+                    const seeds = Number(variant.seeders) || 0;
+                    return {
+                      key: torrentResultKey(variant),
+                      label: `${quality.label} · ${size} · ▲${seeds}${provider ? ` · ${provider}` : ''}`,
+                    };
+                  })}
+                  selectedVariantKey={torrentResultKey(result)}
+                  onSelectVariant={key => setSelectedQualityByGroup(previous => ({ ...previous, [group.key]: key }))}
+                  variantsAriaLabel={`Choose quality for ${group.title}`}
+                  prepared={prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
+                  prepare={{
+                    isPreparing: prepareState.isPreparing,
+                    disabled: !prepareState.source || prepareState.isPreparing,
+                    onClick: () => void prepareMovieTorrent(result),
+                  }}
+                  directStream={{
+                    disabled: nexStreamResolvingId !== null || (nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)),
+                    label: nexStreamResolvingId !== null
+                      ? 'Resolving…'
+                      : nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)
+                        ? 'Searching…'
+                        : 'Direct Stream',
+                    onClick: () => {
+                      if (titleMatches.length > 0) {
+                        void playWithNexStream(titleMatches[0]);
+                        return;
+                      }
+                      const tmdbId = Number(mediaMetadata?.tmdbId || mediaMetadata?.id);
+                      if (Number.isInteger(tmdbId) && tmdbId > 0) {
+                        void playWithNexStream({
+                          id: tmdbId,
+                          title: mediaDisplayTitle || group.title,
+                          date: String(mediaMetadata?.year || group.year || ''),
+                          overview: mediaMetadata?.overview || '',
+                          poster: mediaMetadata?.posterUrl || null,
+                          type: 'movie',
+                        });
+                      } else {
+                        void searchNexStreamTitles(mediaDisplayTitle || group.title, 'movie');
+                      }
+                    },
+                  }}
                 />
               );
             })}
           </div>
-          {!isSearching && renderFranchisePagination(
-            sortedSectionMovieCards === null
-              ? Math.max(groupedResults.length, catalogueExpectedTitles)
-              : sortedSectionMovieCards.length
-          )}
+          {!isSearching && renderFranchisePagination(Math.max(groupedResults.length, catalogueExpectedTitles))}
           </>
           )}
         </div>
