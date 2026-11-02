@@ -189,6 +189,10 @@ class CORSMiddleware:  # name matters: the structure records cls.__name__
     pass
 
 
+class GZipMiddleware:  # name matters: the structure records cls.__name__
+    pass
+
+
 def install_stubs() -> None:
     fastapi = _StubModule("fastapi")
     fastapi.FastAPI = FastAPI
@@ -198,8 +202,14 @@ def install_stubs() -> None:
 
     cors = _StubModule("fastapi.middleware.cors")
     cors.CORSMiddleware = CORSMiddleware
-    sys.modules["fastapi.middleware"] = _StubModule("fastapi.middleware")
+    gzip = _StubModule("fastapi.middleware.gzip")
+    gzip.GZipMiddleware = GZipMiddleware
+    middleware = _StubModule("fastapi.middleware")
+    middleware.cors = cors
+    middleware.gzip = gzip
+    sys.modules["fastapi.middleware"] = middleware
     sys.modules["fastapi.middleware.cors"] = cors
+    sys.modules["fastapi.middleware.gzip"] = gzip
     sys.modules["fastapi.responses"] = _StubModule("fastapi.responses")
 
     for name in ("httpx", "libtorrent", "bs4", "pydantic", "cryptography", "cryptography.fernet"):

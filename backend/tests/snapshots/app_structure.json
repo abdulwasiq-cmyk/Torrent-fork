@@ -760,6 +760,10 @@
    [
     "BaseHTTPMiddleware",
     "_set_upstream_diagnostic_feature"
+   ],
+   [
+    "GZipMiddleware",
+    null
    ]
   ],
   "exception_handlers": [
@@ -1547,6 +1551,10 @@
    [
     "BaseHTTPMiddleware",
     "_set_upstream_diagnostic_feature"
+   ],
+   [
+    "GZipMiddleware",
+    null
    ]
   ],
   "exception_handlers": [
