@@ -7,12 +7,16 @@ import hashlib
 import io
 import json
 import os
+import sys
 import tarfile
 import tempfile
 import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from catalogues.torrent_caches import (
     RUNTIME_MANIFEST_NAME,
@@ -61,6 +65,41 @@ def _with_query(url: str, **params: str) -> str:
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query.update(params)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _manifest_url(base: str, manifest_url: str | None, cache_bust: str) -> str:
+    if manifest_url is None:
+        return _url(base, BUNDLE_MANIFEST_NAME, cacheBust=cache_bust)
+    return _with_query(manifest_url, cacheBust=cache_bust)
+
+
+def _bundle_url(base: str, pointer: dict) -> str:
+    return _url(
+        base,
+        pointer["bundle"],
+        generation=str(pointer["generation"]),
+    )
+
+
+def _installed_cache_status() -> str:
+    runtime = TORRENT_CACHE_DIR
+    has_runtime_cache = (
+        (runtime / "current").is_symlink()
+        or (runtime / RUNTIME_MANIFEST_NAME).is_file()
+        or any((runtime / filename).is_file() for filename in TORRENT_CACHE_FILES)
+    )
+    source = "persistent" if has_runtime_cache else "baked-in-seed"
+    try:
+        manifest = store.initialize()
+    except (OSError, TorrentCacheError) as exc:
+        return (
+            f"cache_readiness=not-ready installed_generation=unknown "
+            f"cache_source={source} cache_error={type(exc).__name__}"
+        )
+    return (
+        f"cache_readiness=ready installed_generation={manifest['generation']} "
+        f"cache_source={source}"
+    )
 
 
 def _read_pointer(blob: bytes) -> dict:
@@ -134,18 +173,21 @@ def _extract_and_install(bundle: bytes, pointer: dict) -> str:
 
 
 def apply_torrent_cache_bundle(base: str, manifest_url: str | None = None) -> str:
-    pointer_url = (
-        _url(base, BUNDLE_MANIFEST_NAME, cacheBust=str(time.time_ns()))
-        if manifest_url is None
-        else _with_query(manifest_url, cacheBust=str(time.time_ns()))
+    pointer_url = _manifest_url(
+        base,
+        manifest_url,
+        str(time.time_ns()),
     )
     manifest_blob = _download(pointer_url, MAX_MANIFEST_BYTES)
     pointer = _read_pointer(manifest_blob)
-    bundle = _download(
-        _url(base, pointer["bundle"], generation=str(pointer["generation"])),
-        MAX_BUNDLE_BYTES,
+    bundle = _download(_bundle_url(base, pointer), MAX_BUNDLE_BYTES)
+    install_status = _extract_and_install(bundle, pointer)
+    installed = store.initialize()
+    return (
+        f"published_generation={pointer['generation']} "
+        f"installed_generation={installed['generation']} "
+        f"status={install_status}"
     )
-    return _extract_and_install(bundle, pointer)
 
 
 def main() -> int:
@@ -154,13 +196,17 @@ def main() -> int:
         "TORRENT_CACHE_BUNDLE_MANIFEST_URL", DEFAULT_MANIFEST_URL
     ).strip()
     if not base or base.casefold() in {"off", "false", "0", "none"}:
-        print("torrent cache bundle: disabled")
+        print(f"torrent cache bundle: disabled; {_installed_cache_status()}")
         return 0
     try:
         result = apply_torrent_cache_bundle(base, manifest_url or None)
-        print(f"torrent cache bundle: status={result}")
+        print(f"torrent cache bundle: {_installed_cache_status()} {result}")
     except (OSError, ValueError, tarfile.TarError, TorrentCacheError) as exc:
-        print(f"torrent cache bundle: skipped ({type(exc).__name__}: {exc})")
+        print(
+            f"torrent cache bundle: fetch_status=failed "
+            f"published_generation=unknown {_installed_cache_status()}; "
+            f"error={type(exc).__name__}: {exc}"
+        )
     return 0
 
 

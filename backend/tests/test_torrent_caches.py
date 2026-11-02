@@ -1,7 +1,10 @@
 import hashlib
 import importlib.util
 import json
+import os
 import socket
+import subprocess
+import sys
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -51,6 +54,101 @@ def _load_torrent_bundle_fetcher():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_torrent_fetcher_builds_published_manifest_and_archive_urls():
+    fetcher = _load_torrent_bundle_fetcher()
+    pointer = {
+        "generation": 1793595213,
+        "bundle": "torrent-cache-bundle-1793595213-d5b636b7.tar.gz",
+    }
+
+    assert fetcher.DEFAULT_MANIFEST_URL == (
+        "https://raw.githubusercontent.com/wroxtaaar/Torrent-Studio/"
+        "cache-manifests/cache-bundles/torrent.json"
+    )
+    assert fetcher._manifest_url(
+        fetcher.DEFAULT_BASE,
+        fetcher.DEFAULT_MANIFEST_URL,
+        "12345",
+    ) == (
+        "https://raw.githubusercontent.com/wroxtaaar/Torrent-Studio/"
+        "cache-manifests/cache-bundles/torrent.json?cacheBust=12345"
+    )
+    assert fetcher._bundle_url(fetcher.DEFAULT_BASE, pointer) == (
+        "https://github.com/wroxtaaar/Torrent-Studio/releases/download/cache-data/"
+        "torrent-cache-bundle-1793595213-d5b636b7.tar.gz?generation=1793595213"
+    )
+
+
+@pytest.mark.parametrize("invocation", ["script", "module"])
+def test_torrent_fetcher_imports_in_script_and_module_modes(tmp_path, invocation):
+    fetcher_path = ROOT / "backend" / "maintenance" / "fetch_torrent_cache_bundle.py"
+    runtime_dir = tmp_path / "app-data"
+    env = os.environ.copy()
+    env.update({
+        "APP_DATA_DIR": str(runtime_dir),
+        "TORRENT_CACHE_SEED_DIR": str(ROOT / "backend" / "cache-seed"),
+        "TORRENT_CACHE_BUNDLE_BASE_URL": "off",
+    })
+    env.pop("PYTHONPATH", None)
+    if invocation == "script":
+        command = [sys.executable, str(fetcher_path)]
+        cwd = tmp_path
+    else:
+        command = [sys.executable, "-m", "maintenance.fetch_torrent_cache_bundle"]
+        cwd = ROOT / "backend"
+
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "torrent cache bundle: disabled" in result.stdout
+    assert "cache_readiness=ready installed_generation=1" in result.stdout
+    assert "cache_source=baked-in-seed" in result.stdout
+
+
+def test_torrent_fetch_failure_logs_fallback_generation_and_readiness(
+    tmp_path, monkeypatch, capsys
+):
+    seed_dir = tmp_path / "seed"
+    _write_fixture_cache(seed_dir, generation=7)
+    runtime_dir = tmp_path / "data" / "torrent-cache"
+    store = torrent_caches.TorrentCacheStore(seed_dir, runtime_dir)
+    fetcher = _load_torrent_bundle_fetcher()
+    monkeypatch.setattr(fetcher, "store", store)
+    monkeypatch.setattr(fetcher, "TORRENT_CACHE_DIR", runtime_dir)
+    monkeypatch.setenv("TORRENT_CACHE_BUNDLE_BASE_URL", "https://example.invalid/releases")
+    monkeypatch.setenv("TORRENT_CACHE_BUNDLE_MANIFEST_URL", "https://example.invalid/torrent.json")
+
+    def fail_download(_url, _limit):
+        raise OSError("HTTP Error 404: Not Found")
+
+    monkeypatch.setattr(fetcher, "_download", fail_download)
+
+    assert fetcher.main() == 0
+
+    output = capsys.readouterr().out
+    assert "fetch_status=failed" in output
+    assert "published_generation=unknown" in output
+    assert "cache_readiness=ready" in output
+    assert "installed_generation=7" in output
+    assert "cache_source=baked-in-seed" in output
+
+
+def test_docker_fetches_torrent_bundle_before_starting_api():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    torrent_fetch = "python -m maintenance.fetch_torrent_cache_bundle"
+    api_start = "uvicorn fullstack_app:app"
+
+    assert torrent_fetch in dockerfile
+    assert dockerfile.index(torrent_fetch) < dockerfile.index(api_start)
 
 
 def _write_fixture_cache(seed_dir: Path, generation: int = 1) -> dict[str, dict]:
