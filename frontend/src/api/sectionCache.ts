@@ -326,7 +326,34 @@ export function franchiseRowsFromSection(
 ): TorrentSearchResult[] | null {
   const subsection = document.subsections[subsectionName];
   if (!subsection || subsection.mediaType !== 'movie') return null;
-  return subsection.results.flatMap(row => {
+  return franchiseRowsForMovies(subsection.results, torrentDocument);
+}
+
+export function franchiseMoviePageFromSection(
+  document: SectionCacheDocument,
+  subsectionName: string,
+  page: number,
+  pageSize: number,
+  torrentDocument?: TorrentCacheDocument,
+): { results: TorrentSearchResult[]; totalResults: number } | null {
+  const subsection = document.subsections[subsectionName];
+  if (!subsection || subsection.mediaType !== 'movie') return null;
+  const totalResults = Number(subsection.totalResults) || subsection.results.length;
+  const safePageSize = Math.max(1, Math.floor(Number(pageSize) || SECTION_PAGE_SIZE));
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const start = (safePage - 1) * safePageSize;
+  const movieRows = subsection.results.slice(start, start + safePageSize);
+  return {
+    results: franchiseRowsForMovies(movieRows, torrentDocument),
+    totalResults,
+  };
+}
+
+function franchiseRowsForMovies(
+  movies: SectionCacheRow[],
+  torrentDocument?: TorrentCacheDocument,
+): TorrentSearchResult[] {
+  return movies.flatMap(row => {
     const tmdbId = sectionRowTmdbId(row);
     const catalogueRecord: TorrentSearchResult = {
       sectionCacheRecord: true,

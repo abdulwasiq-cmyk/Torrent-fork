@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { api, MovieCatalogueKey, TorrentCacheDocument, TorrentSearchResult } from '../../api/client.ts';
-import { movieCataloguePageFromSection, movieCatalogueSection, tvCataloguePageFromSectionCache } from '../../api/sectionCache.ts';
+import { franchiseMoviePageFromSection, movieCataloguePageFromSection, movieCatalogueSection, tvCataloguePageFromSectionCache } from '../../api/sectionCache.ts';
 import { setHighQualityPostersReady } from '../MovieCards.tsx';
 import { imdbRatingKey, torrentResultKey } from './grouping.ts';
 import { CachedFranchiseSearchMode, persistImdbRatings, persistSearchAvailability, persistSearchMetadata, readFranchisePageCache, writeFranchisePageCache } from './persistentCaches.ts';
 import { readPosterTitleCache } from './posterCache.ts';
 import { lowQualityPosterUrl } from './posterUrls.ts';
 import { isDefaultClassicsSort } from './classicsSort.ts';
-import { franchiseCatalogueSection, franchiseRowsFromSection, franchiseSectionDocumentFromCache } from '../../api/sectionCache.ts';
+import { franchiseCatalogueSection, franchiseSectionDocumentFromCache } from '../../api/sectionCache.ts';
 import { CachedFranchiseKey, FranchiseTmdbKey, RegionalCatalogueGroup, RegionalCatalogueMode, RegionalTvGroup, RegionalTvMode } from './types.ts';
 import { useNexStreamState } from './state/useNexStreamState.ts';
 import { useSearchMetadataState } from './state/useSearchMetadataState.ts';
@@ -547,6 +547,9 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
         const { location: sectionLocation, document } = sectionCache;
         if (isStale()) return;
         const subsection = document.subsections[sectionLocation.subsection];
+        if (!subsection || subsection.mediaType !== 'movie') {
+          throw new Error('The requested subsection is missing from its section cache.');
+        }
         let torrentDocument: TorrentCacheDocument | undefined;
         try {
           torrentDocument = await api.getTorrentSectionCache(sectionLocation.section);
@@ -556,16 +559,18 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
             error: String(torrentCacheError),
           });
         }
-        const allResults = franchiseRowsFromSection(
+        const pageSize = Math.max(1, Number(subsection.pageSize) || franchiseGridPageSize);
+        const cataloguePage = franchiseMoviePageFromSection(
           document,
           sectionLocation.subsection,
+          page,
+          pageSize,
           torrentDocument,
         );
-        if (!subsection || !allResults) {
+        if (!cataloguePage) {
           throw new Error('The requested subsection is missing from its section cache.');
         }
-        const pageSize = Math.max(1, Number(subsection.pageSize) || franchiseGridPageSize);
-        const pageRows = allResults.slice((page - 1) * pageSize, page * pageSize);
+        const pageRows = cataloguePage.results;
         setResults(previous => {
           const byKey = new Map<string, TorrentSearchResult>();
           [...previous, ...pageRows].forEach(row => {
@@ -577,7 +582,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
         const nowLoaded = franchiseLoadedPagesRef.current.get(mode) || new Set<number>();
         nowLoaded.add(page);
         franchiseLoadedPagesRef.current.set(mode, nowLoaded);
-        const totalTitles = Number(subsection.totalResults) || allResults.length;
+        const totalTitles = cataloguePage.totalResults;
         if (totalTitles > 0) setCatalogueExpectedTitles(totalTitles);
         if (!background) {
           setSearched(true);
@@ -884,6 +889,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
     setCatalogueSort,
     catalogueSortDirection,
     setCatalogueSortDirection,
+    activeFranchiseSearchMode,
     franchiseGridPage,
     setFranchiseGridPage,
     prepareBuildPendingRef,

@@ -26,8 +26,8 @@ const [sectionCache, grouping] = await Promise.all([
   loadTypeScriptModule(resolve(frontendRoot, 'src/api/sectionCache.ts')),
   loadTypeScriptModule(resolve(frontendRoot, 'src/components/torrent-search/grouping.ts')),
 ]);
-const searchRunnerSource = await readFile(
-  resolve(frontendRoot, 'src/components/torrent-search/state/useSearchRunner.ts'),
+const franchisePanelSource = await readFile(
+  resolve(frontendRoot, 'src/components/torrent-search/useTorrentSearchPanel.tsx'),
   'utf8',
 );
 const searchApiBundle = await build({
@@ -51,11 +51,21 @@ const catalogues = [
 ];
 
 test('cached franchise searches join torrent rows before building result cards', () => {
-  assert.match(searchRunnerSource, /api\.getTorrentSectionCache\(sectionLocation\.section\)/);
+  assert.match(franchisePanelSource, /api\.getTorrentSectionCache\(sectionLocation\.section\)/);
   assert.match(
-    searchRunnerSource,
-    /franchiseRowsFromSection\(\s*document,\s*sectionLocation\.subsection,\s*torrentDocument,\s*\)/,
+    franchisePanelSource,
+    /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*page,\s*pageSize,\s*torrentDocument,\s*\)/,
   );
+});
+
+test('franchise movie summary shows the catalogue total and labels loaded torrent options', async () => {
+  const [panelSource, resultsSource] = await Promise.all([
+    readFile(resolve(frontendRoot, 'src/components/torrent-search/useTorrentSearchPanel.tsx'), 'utf8'),
+    readFile(resolve(frontendRoot, 'src/components/torrent-search/sections/SearchResultsSection.tsx'), 'utf8'),
+  ]);
+  assert.match(panelSource, /const pageRows = cataloguePage\.results/);
+  assert.match(panelSource, /const totalTitles = cataloguePage\.totalResults/);
+  assert.match(resultsSource, /catalogueExpectedTitles\.toLocaleString\(\).*catalogue titles.*sortedResults\.length.*torrent options loaded/);
 });
 
 test('franchise movie catalogues load section records through the card-rendering pipeline', async t => {

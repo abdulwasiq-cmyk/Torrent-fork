@@ -8,6 +8,16 @@ const sourcePath = fileURLToPath(new URL('../src/api/sectionCache.ts', import.me
 const source = await readFile(sourcePath, 'utf8');
 const { code } = await transform(source, { loader: 'ts', format: 'esm' });
 const sectionCache = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const groupingBundle = await build({
+  entryPoints: [fileURLToPath(new URL('../src/components/torrent-search/grouping.ts', import.meta.url))],
+  bundle: true,
+  format: 'esm',
+  platform: 'node',
+  write: false,
+});
+const grouping = await import(
+  `data:text/javascript;base64,${Buffer.from(groupingBundle.outputFiles[0].text).toString('base64')}`
+);
 const searchPath = fileURLToPath(new URL('../src/api/search.ts', import.meta.url));
 const bundledSearch = await build({
   entryPoints: [searchPath],
@@ -188,6 +198,158 @@ test('franchise metadata rows without a cached torrent remain source-less', () =
   assert.equal(rows[0].title, 'No Torrent Movie');
   assert.equal(rows[0].magnetUrl, undefined);
   assert.equal(rows[0].infoHash, undefined);
+});
+
+test('franchise movie pages paginate distinct catalogue rows before expanding torrent variants', async t => {
+  const views = [
+    { mode: 'marvel', section: 'marvel', subsection: 'movies' },
+    { mode: 'dc-live-action', section: 'dc', subsection: 'live-action' },
+    { mode: 'dc-animated', section: 'dc', subsection: 'animated' },
+    { mode: 'classics', section: 'favourites', subsection: 'movies' },
+  ];
+  const movieRows = Array.from({ length: 37 }, (_, index) => ({
+    id: index + 1,
+    tmdbId: index + 1,
+    title: `Movie ${String(index + 1).padStart(2, '0')}`,
+    year: 2020,
+  }));
+  const torrentRecords = movieRows.flatMap((movie, movieIndex) => (
+    Array.from({ length: movieIndex === 0 ? 3 : 1 }, (_, variantIndex) => {
+      const infoHash = String(movieIndex * 3 + variantIndex + 1).padStart(40, '0');
+      return {
+        identity: infoHash,
+        identityKind: 'infoHash',
+        infoHash,
+        title: `${movie.title} ${variantIndex ? '720p WEBRip' : '1080p WEB-DL'}`,
+        size: 1024,
+        seeders: 10,
+        leechers: 1,
+        mediaIdentities: [{
+          mediaType: 'movie',
+          title: movie.title,
+          year: movie.year,
+          tmdbId: movie.tmdbId,
+        }],
+      };
+    })
+  ));
+  const torrentDocument = { schemaVersion: 1, section: 'fixture', records: torrentRecords };
+
+  for (const view of views) {
+    await t.test(view.mode, () => {
+      const document = {
+        section: view.section,
+        metadataSelfContained: true,
+        subsections: {
+          [view.subsection]: {
+            mediaType: 'movie',
+            pageSize: 18,
+            totalResults: movieRows.length,
+            results: movieRows,
+          },
+        },
+      };
+      const page1 = sectionCache.franchiseMoviePageFromSection(
+        document,
+        view.subsection,
+        1,
+        18,
+        torrentDocument,
+      );
+      const page2 = sectionCache.franchiseMoviePageFromSection(
+        document,
+        view.subsection,
+        2,
+        18,
+        torrentDocument,
+      );
+      const page3 = sectionCache.franchiseMoviePageFromSection(
+        document,
+        view.subsection,
+        3,
+        18,
+        torrentDocument,
+      );
+      const groups1 = grouping.groupTorrentResults(page1.results);
+      const groups2 = grouping.groupTorrentResults(page2.results);
+      const titles1 = groups1.map(group => group.variants[0].mediaTitle);
+      const titles2 = groups2.map(group => group.variants[0].mediaTitle);
+
+      assert.equal(page1.totalResults, 37, 'the page carries the full catalogue count');
+      assert.equal(page2.totalResults, 37);
+      assert.equal(page3.totalResults, 37);
+      assert.equal(groups1.length, 18, 'page 1 contains 18 distinct catalogue movies');
+      assert.equal(groups2.length, 18, 'page 2 contains the next 18 distinct catalogue movies');
+      assert.equal(page3.results.length, 1, 'the final page contains the one remaining movie');
+      assert.deepEqual(titles1, movieRows.slice(0, 18).map(movie => movie.title));
+      assert.deepEqual(titles2, movieRows.slice(18, 36).map(movie => movie.title));
+      assert.equal(new Set([...titles1, ...titles2]).size, 36, 'no catalogue title repeats across pages');
+      assert.equal(groups1[0].variants.length, 3, 'all cached variants remain grouped with their movie');
+      assert.equal(
+        groups1.flatMap(group => group.variants).length,
+        20,
+        'the page keeps every cached torrent option for its 18 movies',
+      );
+    });
+  }
+});
+
+test('franchise movie pagination does not alter Marvel, DC, Favourites or Anime TV section pages', async t => {
+  const views = [
+    { label: 'Marvel Web Series', section: 'marvel', subsection: 'series', catalogue: 'marvel', count: 57 },
+    { label: 'DC Web Series', section: 'dc', subsection: 'series', catalogue: 'dc-live-action', count: 40 },
+    { label: 'Favourites Series', section: 'favourites', subsection: 'series', catalogue: 'classics-web-series', count: 32 },
+    { label: 'Favourites Anime TV', section: 'favourites', subsection: 'anime', catalogue: 'classics-anime', count: 29 },
+  ];
+
+  for (const view of views) {
+    await t.test(view.label, async () => {
+      const document = JSON.parse(await readFile(
+        new URL(`../../backend/cache-seed/${view.section}.json`, import.meta.url),
+        'utf8',
+      ));
+      const page1 = sectionCache.tvCataloguePageFromSection(
+        document,
+        view.catalogue,
+        view.subsection,
+        1,
+      );
+      const page2 = sectionCache.tvCataloguePageFromSection(
+        document,
+        view.catalogue,
+        view.subsection,
+        2,
+      );
+      const pageCount = Math.ceil(view.count / 18);
+      const pages = Array.from({ length: pageCount }, (_, index) => (
+        sectionCache.tvCataloguePageFromSection(
+          document,
+          view.catalogue,
+          view.subsection,
+          index + 1,
+        )
+      ));
+
+      assert.equal(page1.totalResults, view.count);
+      assert.equal(page1.results.length, 18);
+      assert.equal(page2.totalResults, view.count);
+      assert.equal(page2.results.length, Math.min(18, view.count - 18));
+      assert.deepEqual(pages.map(page => page.results.length), [
+        ...Array.from({ length: pageCount - 1 }, () => 18),
+        view.count - (pageCount - 1) * 18,
+      ]);
+      assert.equal(
+        sectionCache.franchiseMoviePageFromSection(document, view.subsection, 1, 18),
+        null,
+        'the movie page helper does not handle TV subsections',
+      );
+      assert.equal(
+        new Set(pages.flatMap(page => page.results).map(show => show.id)).size,
+        view.count,
+        'TV pages still contain each catalogue record exactly once',
+      );
+    });
+  }
 });
 
 test('Hollywood and Bollywood TV catalogue mappings retain all three subsections', () => {
