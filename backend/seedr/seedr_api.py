@@ -2231,42 +2231,63 @@ async def seedr_file_stream(
         #      Range support;
         #   3) otherwise use the existing HLS proxy.
         presentation_url = await seedr_v2_video_url(resolved_id)
+        safe_presentation_url = _safe_external_playback_url(presentation_url)
         if presentation_url and not await _presentation_is_hls(presentation_url):
-            return {
+            result = {
                 "url": "/api/seedr/media/video/" + quote(resolved_id, safe=""),
-                "externalUrl": presentation_url,
                 "name": name or resolved_id,
                 "resolvedFileId": resolved_id,
                 "protocol": "direct",
             }
+            if safe_presentation_url:
+                result["externalUrl"] = safe_presentation_url
+            return result
 
         try:
             await _fetch_seedr_hls_manifest(resolved_id)
-            return {
+            result = {
                 "url": "/api/seedr/hls/" + quote(resolved_id, safe=""),
-                "externalUrl": presentation_url or _seedr_media_url(resolved_id, "video"),
                 "name": name or resolved_id,
                 "resolvedFileId": resolved_id,
                 "protocol": "hls",
             }
+            if safe_presentation_url:
+                result["externalUrl"] = safe_presentation_url
+            return result
         except HTTPException:
             if presentation_url:
-                return {
+                result = {
                     "url": "/api/seedr/media/video/" + quote(resolved_id, safe=""),
-                    "externalUrl": presentation_url,
                     "name": name or resolved_id,
                     "resolvedFileId": resolved_id,
                     "protocol": "direct",
                 }
+                if safe_presentation_url:
+                    result["externalUrl"] = safe_presentation_url
+                return result
             raise
-
     return {
         "url": "/api/seedr/media/audio/" + quote(resolved_id, safe=""),
-        "externalUrl": _seedr_media_url(resolved_id, "audio"),
         "name": name or resolved_id,
         "resolvedFileId": resolved_id,
         "protocol": "mp3",
     }
+
+
+def _safe_external_playback_url(value: str) -> str:
+    target = str(value or "").strip()
+    parsed = urlsplit(target)
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        return ""
+    return target
+
 
 @router.get("/api/seedr/hls/{file_id}")
 async def seedr_hls_manifest(file_id: str):

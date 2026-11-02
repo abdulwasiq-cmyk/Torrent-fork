@@ -229,12 +229,12 @@ def test_token_diagnostic_does_not_return_credential_metadata(monkeypatch):
     assert "tokenFingerprint" not in result
 
 
-def test_seedr_stream_response_preserves_provider_playback_url(monkeypatch):
+def test_seedr_video_stream_uses_provider_playback_url_without_exposing_session_token(monkeypatch):
     async def resolve_stream_id(_file_id, _name):
         return "123"
 
     async def resolve_presentation_url(_file_id, audio_index=None):
-        return "https://www.seedr.cc/presentation?access_token=private-test-value"
+        return "https://cdn.seedr.cc/presentation/123.m3u8"
 
     async def is_not_hls(_url):
         return False
@@ -247,9 +247,68 @@ def test_seedr_stream_response_preserves_provider_playback_url(monkeypatch):
     result = asyncio.run(seedr_api.seedr_file_stream("123", "video", "Example"))
 
     assert result["url"] == "/api/seedr/media/video/123"
-    assert result["externalUrl"] == (
-        "https://www.seedr.cc/presentation?access_token=private-test-value"
-    )
+    assert result["externalUrl"] == "https://cdn.seedr.cc/presentation/123.m3u8"
+    assert "private-test-value" not in json.dumps(result)
+
+
+def test_seedr_video_stream_omits_credential_bearing_external_url(monkeypatch):
+    async def resolve_stream_id(_file_id, _name):
+        return "123"
+
+    async def resolve_presentation_url(_file_id, audio_index=None):
+        return "https://cdn.seedr.cc/presentation/123.m3u8?access_token=secret-value"
+
+    async def is_not_hls(_url):
+        return False
+
+    monkeypatch.setattr(seedr_api, "current_seedr_token", lambda: "private-test-value")
+    monkeypatch.setattr(seedr_api, "resolve_seedr_stream_id", resolve_stream_id)
+    monkeypatch.setattr(seedr_api, "seedr_v2_video_url", resolve_presentation_url)
+    monkeypatch.setattr(seedr_api, "_presentation_is_hls", is_not_hls)
+
+    result = asyncio.run(seedr_api.seedr_file_stream("123", "video", "Example"))
+
+    assert result["url"] == "/api/seedr/media/video/123"
+    assert "externalUrl" not in result
+    assert "secret-value" not in json.dumps(result)
+    assert "private-test-value" not in json.dumps(result)
+
+
+def test_seedr_audio_stream_url_is_encoded_and_does_not_expose_session_token(monkeypatch):
+    async def resolve_stream_id(_file_id, _name):
+        return "folder/file 123"
+
+    monkeypatch.setattr(seedr_api, "current_seedr_token", lambda: "private-test-value")
+    monkeypatch.setattr(seedr_api, "resolve_seedr_stream_id", resolve_stream_id)
+
+    result = asyncio.run(seedr_api.seedr_file_stream("123", "audio", "Example"))
+
+    assert result["url"] == "/api/seedr/media/audio/folder%2Ffile%20123"
+    assert result["protocol"] == "mp3"
+    assert "externalUrl" not in result
+    assert "private-test-value" not in json.dumps(result)
+
+
+def test_seedr_hls_fallback_video_url_does_not_expose_session_token(monkeypatch):
+    async def resolve_stream_id(_file_id, _name):
+        return "folder/video 123"
+
+    async def no_presentation(_file_id, audio_index=None):
+        return ""
+
+    async def fetch_manifest(_file_id):
+        return "#EXTM3U", "https://cdn.seedr.cc/video.m3u8"
+
+    monkeypatch.setattr(seedr_api, "current_seedr_token", lambda: "private-test-value")
+    monkeypatch.setattr(seedr_api, "resolve_seedr_stream_id", resolve_stream_id)
+    monkeypatch.setattr(seedr_api, "seedr_v2_video_url", no_presentation)
+    monkeypatch.setattr(seedr_api, "_fetch_seedr_hls_manifest", fetch_manifest)
+
+    result = asyncio.run(seedr_api.seedr_file_stream("123", "video", "Example"))
+
+    assert result["url"] == "/api/seedr/hls/folder%2Fvideo%20123"
+    assert "externalUrl" not in result
+    assert "private-test-value" not in json.dumps(result)
 
 
 def test_seedr_download_links_redirect_to_seedr_directly(monkeypatch):
