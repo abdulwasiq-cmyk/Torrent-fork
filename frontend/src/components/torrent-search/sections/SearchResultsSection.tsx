@@ -306,114 +306,133 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
               const groupIdentity = torrentMediaIdentity(posterResult);
               const groupAvailabilityKey = `${groupIdentity.normalized}|${groupIdentity.year || 'unknown'}`;
 
-              // Normal searches use a poster-first two-state card. Clicking the poster
-              // opens the Prepare/details card; clicking it again returns here.
-              if (expandedSearchGroupKey !== group.key) {
-                const availability = searchAvailabilityByGroup[group.key] || searchAvailabilityByGroup[groupAvailabilityKey];
-                const providerMatchTitle = episodeSeriesTitle(group.title) || group.title;
-                const groupTitleKey = normalizeSavedOttTitle(providerMatchTitle);
-                const matchingSavedTitles = (availability?.matches || []).filter(match =>
-                  Array.isArray(match.providers) &&
-                  match.providers.length > 0 &&
-                  normalizeSavedOttTitle(String(match.title || '')) === groupTitleKey
-                );
-                const compactProviders = uniqueOttProviders(
-                  matchingSavedTitles.length > 0
-                    ? matchingSavedTitles.flatMap(match => match.providers)
-                    : (availability?.providers || [])
-                );
-                return (
-                  <MovieCompactCard
-                    key={group.key || (group.title + '-' + index)}
-                    title={mediaDisplayTitle}
-                    titleHref={imdbTitleHref}
-                    year={mediaDisplayYear}
-                    imdb={displayImdbRating}
-                    tmdbRating={mediaMetadata?.rating}
-                    overview={
-                      mediaMetadata?.overview ||
-                      (searchMetadataStatus === 'loading'
-                        ? 'Loading synopsis from TMDB…'
-                        : searchMetadataStatus === 'unavailable'
-                          ? 'TMDB synopsis is temporarily unavailable.'
-                          : 'No synopsis available from TMDB for this title.')
-                    }
-                    posterSrc={lowQualityPosterUrl(sharedPosterUrl)}
-                    posterAlt={mediaDisplayTitle}
-                    onPosterClick={() => {
-                      if (pendingPosterAction) return;
-                      if (!posterFirstPageReadyRef.current) {
-                        setPendingPosterAction({
-                          kind: 'search',
-                          groupKey: group.key,
-                          page: franchiseGridPage,
-                        });
-                        return;
-                      }
-                      setExpandedSearchGroupKey(group.key);
-                    }}
-                    onPosterLoad={event => {
-                      const key = posterKeyFor(posterResult);
-                      searchPosterUrlsRef.current[key] = event.currentTarget.currentSrc || event.currentTarget.src;
-                      posterLoadedRef.current.add(key);
-                      event.currentTarget.style.display = '';
-                      event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.add('hidden');
-                    }}
-                    onPosterError={event => {
-                      const image = event.currentTarget;
-                      // Do not fall back to catalogue artwork here: metadata sources can
-                      // attach a poster for a different title/remake. Retry the strict
-                      // title-and-year resolver instead.
-                      const key = posterKeyFor(posterResult);
-                      delete searchPosterUrlsRef.current[key];
-                      posterLoadedRef.current.delete(key);
-                      setMetadataPosterFailed(previous => previous[key] ? previous : { ...previous, [key]: true });
-                      image.style.display = 'none';
-                      image.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.remove('hidden');
-
-                      // Match the expanded card's retry path; do not leave a blank black poster
-                      // slot just because the first image request failed.
-                      if (!posterBackgroundQueuedRef.current.has(key)) {
-                        posterBackgroundQueuedRef.current.add(key);
-                        posterBackgroundQueueRef.current.unshift({ key, result: posterResult });
-                        startPosterBackgroundWorkers();
-                      }
-                    }}
-                    providers={toCardProviders(compactProviders)}
-                    providersAriaLabel={'Streaming services for ' + group.title}
-                    providersFallbackText={
-                      availability?.status === 'loading'
-                        ? 'Checking streaming services…'
-                        : availability?.status === 'unavailable'
-                          ? 'Streaming availability temporarily unavailable'
-                          : availability?.status === 'not_confirmed'
-                            ? 'Streaming providers not confirmed'
-                            : availability?.status === 'ready'
-                              ? 'No streaming providers reported'
-                              : searchMetadataStatus === 'loading'
-                                ? 'Checking streaming availability…'
-                                : 'Streaming providers not listed'
-                    }
-                  />
-                );
-              }
-
+              const isExpanded = expandedSearchGroupKey === group.key;
+              const availability = searchAvailabilityByGroup[group.key] || searchAvailabilityByGroup[groupAvailabilityKey];
+              const providerMatchTitle = episodeSeriesTitle(group.title) || group.title;
+              const groupTitleKey = normalizeSavedOttTitle(providerMatchTitle);
+              const matchingSavedTitles = (availability?.matches || []).filter(match =>
+                Array.isArray(match.providers) &&
+                match.providers.length > 0 &&
+                normalizeSavedOttTitle(String(match.title || '')) === groupTitleKey
+              );
+              const compactProviders = uniqueOttProviders(
+                matchingSavedTitles.length > 0
+                  ? matchingSavedTitles.flatMap(match => match.providers)
+                  : (availability?.providers || [])
+              );
               const prepareState = prepareStateFor(result);
               return (
-                <MoviePrepareCard
+                <MovieCompactCard
                   key={group.key || (group.title + '-' + index)}
-                  className="z-0"
-                  posterSrc={loadedSearchPosterUrl || lowQualityPosterUrl(sharedPosterUrl)}
-                  posterAlt={group.title}
-                  providers={toCardProviders(uniqueOttProviders(
-                    (searchAvailabilityByGroup[group.key]?.matches ||
-                      searchAvailabilityByGroup[groupAvailabilityKey]?.matches ||
-                      [])
-                      .filter(match => Array.isArray(match.providers) && match.providers.length > 0 &&
-                        normalizeSavedOttTitle(String(match.title || '')) === normalizeSavedOttTitle(episodeSeriesTitle(group.title) || group.title))
-                      .flatMap(match => match.providers)
-                  ))}
-                  onPosterClick={() => setExpandedSearchGroupKey(null)}
+                  expanded={isExpanded}
+                  expandedContent={(
+                    <MoviePrepareCard
+                      contentOnly
+                      posterSrc=""
+                      posterAlt={group.title}
+                      providers={toCardProviders(uniqueOttProviders(
+                        (availability?.matches || [])
+                          .filter(match => Array.isArray(match.providers) && match.providers.length > 0 &&
+                            normalizeSavedOttTitle(String(match.title || '')) === groupTitleKey)
+                          .flatMap(match => match.providers)
+                      ))}
+                      onPosterClick={() => setExpandedSearchGroupKey(null)}
+                      onPosterLoad={() => {}}
+                      onPosterError={() => {}}
+                      imdb={displayImdbRating}
+                      seeders={result.seeders}
+                      indexer={result.indexer}
+                      quality={extractedQuality(result)}
+                      title={mediaDisplayTitle}
+                      titleHref={imdbTitleHref}
+                      year={mediaMetadata?.year || group.year}
+                      onClose={() => setExpandedSearchGroupKey(null)}
+                      variants={group.variants.map(variant => {
+                        const quality = torrentQualityDetails(variant);
+                        const provider = String(variant.indexer || '').trim();
+                        const size = formatBytes(Number(variant.size) || 0);
+                        const seeds = Number(variant.seeders) || 0;
+                        return {
+                          key: torrentResultKey(variant),
+                          label: `${quality.label} · ${size} · ▲${seeds}${provider ? ` · ${provider}` : ''}`,
+                        };
+                      })}
+                      selectedVariantKey={torrentResultKey(result)}
+                      onSelectVariant={key => setSelectedQualityByGroup(previous => ({ ...previous, [group.key]: key }))}
+                      variantsAriaLabel={`Choose quality for ${group.title}`}
+                      prepared={prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
+                      prepare={{
+                        isPreparing: prepareState.isPreparing,
+                        disabled: !prepareState.source || prepareState.isPreparing,
+                        onClick: () => void prepareMovieTorrent(result),
+                      }}
+                      directStream={{
+                        disabled: nexStreamResolvingId !== null || (nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)),
+                        label: nexStreamResolvingId !== null
+                          ? 'Resolving…'
+                          : nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)
+                            ? 'Searching…'
+                            : 'Direct Stream',
+                        onClick: () => {
+                          if (titleMatches.length > 0) {
+                            void playWithNexStream(titleMatches[0]);
+                            return;
+                          }
+                          const tmdbId = Number(mediaMetadata?.tmdbId || mediaMetadata?.id);
+                          if (Number.isInteger(tmdbId) && tmdbId > 0) {
+                            void playWithNexStream({
+                              id: tmdbId,
+                              title: mediaDisplayTitle || group.title,
+                              date: String(mediaMetadata?.year || group.year || ''),
+                              overview: mediaMetadata?.overview || '',
+                              poster: mediaMetadata?.posterUrl || null,
+                              type: 'movie',
+                            });
+                          } else {
+                            void searchNexStreamTitles(mediaDisplayTitle || group.title, 'movie');
+                          }
+                        },
+                      }}
+                    />
+                  )}
+                  posterBadges={(
+                    <>
+                      {Number(result.seeders) > 0 && <span className={'absolute left-2 rounded-md bg-black/80 px-2 py-1 text-[10px] font-bold text-emerald-400 ' + (displayImdbRating?.imdbRating ? 'top-10' : 'top-2')}>{result.seeders} seeds</span>}
+                      {result.indexer && <span className="absolute right-2 top-2 max-w-[70%] truncate rounded-md bg-black/75 px-2 py-1 text-[10px] font-medium text-slate-300">{result.indexer}</span>}
+                      {extractedQuality(result) && <span className="absolute left-2 bottom-2 rounded-md border border-cyan-400/30 bg-slate-950/85 px-2 py-1 text-[10px] font-bold text-cyan-300">{extractedQuality(result)}</span>}
+                    </>
+                  )}
+                  title={mediaDisplayTitle}
+                  titleHref={imdbTitleHref}
+                  year={mediaDisplayYear}
+                  imdb={displayImdbRating}
+                  tmdbRating={mediaMetadata?.rating}
+                  overview={
+                    mediaMetadata?.overview ||
+                    (searchMetadataStatus === 'loading'
+                      ? 'Loading synopsis from TMDB…'
+                      : searchMetadataStatus === 'unavailable'
+                        ? 'TMDB synopsis is temporarily unavailable.'
+                        : 'No synopsis available from TMDB for this title.')
+                  }
+                  posterSrc={lowQualityPosterUrl(sharedPosterUrl)}
+                  posterAlt={mediaDisplayTitle}
+                  onPosterClick={() => {
+                    if (isExpanded) {
+                      setExpandedSearchGroupKey(null);
+                      return;
+                    }
+                    if (pendingPosterAction) return;
+                    if (!posterFirstPageReadyRef.current) {
+                      setPendingPosterAction({
+                        kind: 'search',
+                        groupKey: group.key,
+                        page: franchiseGridPage,
+                      });
+                      return;
+                    }
+                    setExpandedSearchGroupKey(group.key);
+                  }}
                   onPosterLoad={event => {
                     const key = posterKeyFor(posterResult);
                     searchPosterUrlsRef.current[key] = event.currentTarget.currentSrc || event.currentTarget.src;
@@ -438,60 +457,21 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                       startPosterBackgroundWorkers();
                     }
                   }}
-                  imdb={displayImdbRating}
-                  seeders={result.seeders}
-                  indexer={result.indexer}
-                  quality={extractedQuality(result)}
-                  title={mediaDisplayTitle}
-                  titleHref={imdbTitleHref}
-                  year={mediaMetadata?.year || group.year}
-                  onClose={() => setExpandedSearchGroupKey(null)}
-                  variants={group.variants.map(variant => {
-                    const quality = torrentQualityDetails(variant);
-                    const provider = String(variant.indexer || '').trim();
-                    const size = formatBytes(Number(variant.size) || 0);
-                    const seeds = Number(variant.seeders) || 0;
-                    return {
-                      key: torrentResultKey(variant),
-                      label: `${quality.label} · ${size} · ▲${seeds}${provider ? ` · ${provider}` : ''}`,
-                    };
-                  })}
-                  selectedVariantKey={torrentResultKey(result)}
-                  onSelectVariant={key => setSelectedQualityByGroup(previous => ({ ...previous, [group.key]: key }))}
-                  variantsAriaLabel={`Choose quality for ${group.title}`}
-                  prepared={prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
-                  prepare={{
-                    isPreparing: prepareState.isPreparing,
-                    disabled: !prepareState.source || prepareState.isPreparing,
-                    onClick: () => void prepareMovieTorrent(result),
-                  }}
-                  directStream={{
-                    disabled: nexStreamResolvingId !== null || (nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)),
-                    label: nexStreamResolvingId !== null
-                      ? 'Resolving…'
-                      : nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)
-                        ? 'Searching…'
-                        : 'Direct Stream',
-                    onClick: () => {
-                      if (titleMatches.length > 0) {
-                        void playWithNexStream(titleMatches[0]);
-                        return;
-                      }
-                      const tmdbId = Number(mediaMetadata?.tmdbId || mediaMetadata?.id);
-                      if (Number.isInteger(tmdbId) && tmdbId > 0) {
-                        void playWithNexStream({
-                          id: tmdbId,
-                          title: mediaDisplayTitle || group.title,
-                          date: String(mediaMetadata?.year || group.year || ''),
-                          overview: mediaMetadata?.overview || '',
-                          poster: mediaMetadata?.posterUrl || null,
-                          type: 'movie',
-                        });
-                      } else {
-                        void searchNexStreamTitles(mediaDisplayTitle || group.title, 'movie');
-                      }
-                    },
-                  }}
+                  providers={toCardProviders(compactProviders)}
+                  providersAriaLabel={'Streaming services for ' + group.title}
+                  providersFallbackText={
+                    availability?.status === 'loading'
+                      ? 'Checking streaming services…'
+                      : availability?.status === 'unavailable'
+                        ? 'Streaming availability temporarily unavailable'
+                        : availability?.status === 'not_confirmed'
+                          ? 'Streaming providers not confirmed'
+                          : availability?.status === 'ready'
+                            ? 'No streaming providers reported'
+                            : searchMetadataStatus === 'loading'
+                              ? 'Checking streaming availability…'
+                              : 'Streaming providers not listed'
+                  }
                 />
               );
             })}
