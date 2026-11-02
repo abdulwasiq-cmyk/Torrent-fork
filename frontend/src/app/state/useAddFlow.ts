@@ -337,7 +337,8 @@ export function useAddFlow({ torrents, setFiles, setStorageStats, setNotificatio
         forceBackend,
         selectedNames,
         seedrTaskId,
-        torrentName
+        torrentName,
+        requiredBytes
       );
       if (result.backend === 'seedr') {
         const initialTorrentName = String(torrentName || '').trim();

@@ -35,6 +35,7 @@ from seedr.seedr_client import (
     task_failed,
     task_id,
     unwrap_seedr_task,
+    validate_seedr_torrent_size,
 )
 from seedr.seedr_session import (
     _clear_seedr_session_token,
@@ -1104,7 +1105,7 @@ async def seedr_add(request: Request):
     requested_folder = str(payload.get("folder_id") or "").strip()
     folder = int(requested_folder) if requested_folder.isdigit() else 0
     auto_cleanup = bool(payload.get("auto_cleanup"))
-    required_bytes = max(0, int(float(payload.get("required_bytes") or 0)))
+    required_bytes = validate_seedr_torrent_size(payload.get("required_bytes"))
 
     session_id = _seedr_request_session_id.get().strip()
     logger.info(
@@ -1137,14 +1138,19 @@ async def seedr_add(request: Request):
         deleted_folders.extend(await _prepare_seedr_space(required_bytes))
 
     try:
-        task = unwrap_seedr_task(await add_task(raw_magnet, folder))
+        task = unwrap_seedr_task(
+            await add_task(raw_magnet, folder, torrent_size_bytes=required_bytes)
+        )
     except SeedrError as exc:
         reason = str(exc.detail or "").lower()
         is_storage_shortage = (
-            exc.status_code == 413
-            or "not enough space" in reason
-            or "insufficient storage" in reason
-            or "insufficient space" in reason
+            exc.code != "TORRENT_SIZE_LIMIT_EXCEEDED"
+            and (
+                exc.status_code == 413
+                or "not enough space" in reason
+                or "insufficient storage" in reason
+                or "insufficient space" in reason
+            )
         )
         if not (is_storage_shortage and auto_cleanup and required_bytes > 0):
             logger.exception(
@@ -1168,7 +1174,9 @@ async def seedr_add(request: Request):
         )
         deleted_folders.extend(await _prepare_seedr_space(required_bytes, force_one=True))
         try:
-            task = unwrap_seedr_task(await add_task(raw_magnet, folder))
+            task = unwrap_seedr_task(
+                await add_task(raw_magnet, folder, torrent_size_bytes=required_bytes)
+            )
         except SeedrError as retry_exc:
             logger.exception(
                 "Seedr retry after storage cleanup failed: session=%s code=%s status=%s detail=%s",

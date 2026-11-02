@@ -110,7 +110,9 @@ def test_seedr_task_add_uses_bearer_and_expected_request_body(monkeypatch, caplo
     monkeypatch.setattr(seedr_client, "_seedr_session_auth_mode", lambda _session: "pat")
     monkeypatch.setattr(seedr_client, "_InstrumentedAsyncClient", lambda **kwargs: FakeClient())
 
-    result = asyncio.run(seedr_client.add_task(magnet, 17))
+    result = asyncio.run(
+        seedr_client.add_task(magnet, 17, torrent_size_bytes=1000)
+    )
 
     assert result["id"] == 123
     method, url, headers, kwargs = requests[0]
@@ -194,8 +196,8 @@ def test_seedr_add_forwards_magnet_after_csrf_validation(monkeypatch, caplog):
     async def no_active_tasks(_replace_task_id=""):
         return []
 
-    async def fake_add_task(magnet, folder_id):
-        requests.append((magnet, folder_id))
+    async def fake_add_task(magnet, folder_id, *, torrent_size_bytes):
+        requests.append((magnet, folder_id, torrent_size_bytes))
         return {"id": 123, "torrent_name": "Example"}
 
     monkeypatch.setattr(seedr_api, "_cancel_active_seedr_tasks_for_replacement", no_active_tasks)
@@ -203,11 +205,92 @@ def test_seedr_add_forwards_magnet_after_csrf_validation(monkeypatch, caplog):
     monkeypatch.setattr(seedr_api, "schedule_seedr_cleanup", lambda *args: None)
     magnet = "magnet:?xt=urn:btih:" + "c" * 40 + "&dn=Example"
 
-    response = client.post("/api/seedr/add", json={"magnet": magnet})
+    response = client.post(
+        "/api/seedr/add",
+        json={"magnet": magnet, "required_bytes": 2 * 1024**3},
+    )
 
     assert response.status_code == 200
-    assert requests == [(magnet, 0)]
+    assert requests == [(magnet, 0, 2 * 1024**3)]
     seedr_session._seedr_sessions.clear()
+
+
+@pytest.mark.parametrize(
+    ("size", "expected_status"),
+    [
+        (None, 400),
+        ("unknown", 400),
+        (0, 400),
+        (-1, 400),
+        (2 * 1024**3 + 1, 413),
+    ],
+)
+def test_seedr_add_rejects_invalid_size_before_task_or_cleanup(
+    monkeypatch, size, expected_status
+):
+    seedr_session._seedr_sessions.clear()
+
+    async def accept_test_pat(_token):
+        return None
+
+    monkeypatch.setattr(seedr_api, "_validate_seedr_pat", accept_test_pat)
+    client = TestClient(main.app)
+    csrf = client.get("/api/seedr/session").json()["csrfToken"]
+    client.headers["X-Torrent-Studio-CSRF"] = csrf
+    assert client.post("/api/seedr/connect/pat", json={"pat": "unit-test-pat"}).status_code == 200
+
+    side_effects = []
+
+    async def no_side_effects(*args, **kwargs):
+        side_effects.append((args, kwargs))
+        return []
+
+    async def should_not_add(*args, **kwargs):
+        side_effects.append((args, kwargs))
+        raise AssertionError("Rejected torrent reached Seedr")
+
+    monkeypatch.setattr(seedr_api, "_cancel_active_seedr_tasks_for_replacement", no_side_effects)
+    monkeypatch.setattr(seedr_api, "_prepare_seedr_space", no_side_effects)
+    monkeypatch.setattr(seedr_api, "add_task", should_not_add)
+
+    response = client.post(
+        "/api/seedr/add",
+        json={"magnet": "magnet:?xt=urn:btih:" + "e" * 40, "required_bytes": size},
+    )
+
+    assert response.status_code == expected_status
+    assert side_effects == []
+    seedr_session._seedr_sessions.clear()
+
+
+@pytest.mark.parametrize(
+    ("size", "expected_code"),
+    [
+        (None, "TORRENT_SIZE_UNKNOWN"),
+        (2 * 1024**3 + 1, "TORRENT_SIZE_LIMIT_EXCEEDED"),
+    ],
+)
+def test_seedr_client_add_rejects_size_before_provider_request(
+    monkeypatch, size, expected_code
+):
+    requests = []
+
+    async def fake_request(*args, **kwargs):
+        requests.append((args, kwargs))
+        return {"id": 456}
+
+    monkeypatch.setattr(seedr_client, "seedr_request", fake_request)
+
+    with pytest.raises(SeedrError) as raised:
+        asyncio.run(
+            seedr_client.add_task(
+                "magnet:?xt=urn:btih:" + "f" * 40,
+                torrent_size_bytes=size,
+            )
+        )
+
+    assert raised.value.code == expected_code
+    assert requests == []
 
 
 def test_token_diagnostic_does_not_return_credential_metadata(monkeypatch):
@@ -731,6 +814,7 @@ def test_seedr_add_classifies_insufficient_scope_response(monkeypatch):
             seedr_client.add_task(
                 "magnet:?xt=urn:btih:" + "d" * 40,
                 0,
+                torrent_size_bytes=1000,
             )
         )
 

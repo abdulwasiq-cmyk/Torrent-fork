@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from core.settings import TORRENT_CACHE_DIR, TORRENT_CACHE_SEED_DIR
+from core.torrent_size import filter_torrent_records
 from fastapi import APIRouter, HTTPException, Response
 
 router = APIRouter()
@@ -348,6 +349,7 @@ class TorrentCacheStore:
                     section,
                     manifest["files"][filename]["recordCount"],
                 )
+                document["records"], _ = filter_torrent_records(document["records"])
                 self._ready = True
                 return document, manifest["generation"]
             except Exception:

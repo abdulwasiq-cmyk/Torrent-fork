@@ -11,12 +11,18 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+BACKEND = Path(__file__).resolve().parents[1] / "backend"
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+from core.torrent_size import filter_torrent_records, torrent_size_exclusion_reason
 
 SECTIONS = (
     "hollywood",
@@ -350,19 +356,37 @@ async def refresh_torrent_cache(seed_dir: Path, searcher: Searcher) -> dict[str,
     refreshed_at = datetime.now(timezone.utc).isoformat()
     totals: dict[str, dict[str, int]] = {}
     rejected_missing_hashes = 0
+    rejected_oversized = 0
+    rejected_unknown_size = 0
+    excluded_existing_oversized = 0
+    excluded_existing_unknown_size = 0
     changed_sections: set[str] = set()
 
     for section in SECTIONS:
         document = documents[section]
-        records = {record["identity"]: dict(record) for record in document["records"]}
+        retained, exclusion_counts = filter_torrent_records(document["records"])
+        records = {record["identity"]: dict(record) for record in retained}
         searches = 0
         additions = 0
-        section_changed = False
+        section_changed = len(retained) != len(document["records"])
+        excluded_existing_oversized += exclusion_counts["excludedOversized"]
+        excluded_existing_unknown_size += exclusion_counts["excludedUnknownOrInvalidSize"]
+        section_oversized = 0
+        section_unknown_size = 0
         for card in _metadata_cards(seed_dir, section):
             searches += 1
             results = await searcher(_search_query(card))
             for result in results:
                 if not _matches_card(result, card):
+                    continue
+                size_reason = torrent_size_exclusion_reason(result.get("size"))
+                if size_reason == "oversized":
+                    rejected_oversized += 1
+                    section_oversized += 1
+                    continue
+                if size_reason:
+                    rejected_unknown_size += 1
+                    section_unknown_size += 1
                     continue
                 identity = result_info_hash(result)
                 if not identity:
@@ -383,6 +407,10 @@ async def refresh_torrent_cache(seed_dir: Path, searcher: Searcher) -> dict[str,
             "metadataCardsSearched": searches,
             "newHashes": additions,
             "recordCount": len(document["records"]),
+            "rejectedOversizedResults": section_oversized,
+            "rejectedUnknownSizeResults": section_unknown_size,
+            "excludedExistingOversizedRecords": exclusion_counts["excludedOversized"],
+            "excludedExistingUnknownSizeRecords": exclusion_counts["excludedUnknownOrInvalidSize"],
         }
 
     updated: dict[str, bytes] = {}
@@ -429,6 +457,10 @@ async def refresh_torrent_cache(seed_dir: Path, searcher: Searcher) -> dict[str,
         "generation": manifest["generation"] + int(bool(updated)),
         "updatedFiles": sorted(updated),
         "rejectedResultsWithoutInfoHash": rejected_missing_hashes,
+        "rejectedOversizedResults": rejected_oversized,
+        "rejectedUnknownSizeResults": rejected_unknown_size,
+        "excludedExistingOversizedRecords": excluded_existing_oversized,
+        "excludedExistingUnknownSizeRecords": excluded_existing_unknown_size,
         "sections": totals,
     }
 

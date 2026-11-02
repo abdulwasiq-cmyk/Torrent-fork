@@ -256,7 +256,8 @@ export const torrentsApi = {
     forceBackend?: 'seedr' | 'qbittorrent',
     selectedNames?: string[],
     seedrTaskId?: number | string,
-    torrentName?: string
+    torrentName?: string,
+    requiredBytes?: number
   ): Promise<any> {
     const magnet = urls;
     if (!magnet.trim().toLowerCase().startsWith('magnet:?')) {
@@ -267,7 +268,7 @@ export const torrentsApi = {
       const res = await apiFetch('/api/seedr/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ magnet })
+        body: JSON.stringify({ magnet, required_bytes: requiredBytes })
       });
 
       const body = await res.text();

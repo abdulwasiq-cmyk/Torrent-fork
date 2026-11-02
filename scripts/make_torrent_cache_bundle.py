@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tarfile
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +26,7 @@ from catalogues.torrent_caches import (
     _read_document,
     _validate_manifest,
 )
+from core.torrent_size import filter_torrent_records
 
 BUNDLE_PREFIX = "torrent-cache-bundle-"
 BUNDLE_MANIFEST_NAME = "torrent-cache-bundle.json"
@@ -92,30 +95,63 @@ def make_torrent_cache_bundle(
     next_generation = generation if generation is not None else int(time.time())
     if next_generation < seed_manifest["generation"]:
         raise ValueError("Bundle generation cannot be older than the seed generation")
-    bundle_manifest = dict(seed_manifest)
-    bundle_manifest.update({
-        "generation": next_generation,
-        "createdAt": datetime.now(UTC).isoformat(),
-        "source": "github-versioned-torrent-bundle",
-    })
+    files: dict[str, dict[str, Any]] = {}
+    hashes: set[str] = set()
+    section_entries = 0
+    with tempfile.TemporaryDirectory(prefix="torrent-cache-stage-", dir=output_dir) as stage_name:
+        staged_dir = Path(stage_name)
+        for section, filename in zip(TORRENT_CACHE_NAMES, TORRENT_CACHE_FILES):
+            source_path = seed_dir / filename
+            document = _read_document(source_path, section)
+            retained, _ = filter_torrent_records(document["records"])
+            if len(retained) == len(document["records"]):
+                content = source_path.read_bytes()
+            else:
+                filtered_document = {**document, "records": retained}
+                content = (
+                    json.dumps(
+                        filtered_document,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                    + b"\n"
+                )
+            (staged_dir / filename).write_bytes(content)
+            files[filename] = {
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "recordCount": len(retained),
+            }
+            section_entries += len(retained)
+            hashes.update(record["identity"] for record in retained)
 
-    staged_manifest = output_dir / RUNTIME_MANIFEST_NAME
-    staged_manifest.write_text(
-        json.dumps(bundle_manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary_bundle = output_dir / "torrent-cache-bundle.tar.gz"
-    with tarfile.open(temporary_bundle, "w:gz") as archive:
-        for filename in (*TORRENT_CACHE_FILES, RUNTIME_MANIFEST_NAME):
-            archive.add(
-                seed_dir / filename if filename != RUNTIME_MANIFEST_NAME else staged_manifest,
-                arcname=filename if filename != RUNTIME_MANIFEST_NAME else RUNTIME_MANIFEST_NAME,
-            )
-    bundle_sha256 = _sha256(temporary_bundle)
-    bundle_name = f"{BUNDLE_PREFIX}{next_generation}-{bundle_sha256[:8]}.tar.gz"
-    immutable_bundle = output_dir / bundle_name
-    temporary_bundle.replace(immutable_bundle)
-    staged_manifest.unlink()
+        bundle_manifest = {
+            **seed_manifest,
+            "generation": next_generation,
+            "createdAt": datetime.now(UTC).isoformat(),
+            "source": "github-versioned-torrent-bundle",
+            "files": files,
+            "globalUniqueNormalizedInfoHashes": len(hashes),
+            "sectionLevelEntries": section_entries,
+        }
+        staged_manifest = staged_dir / RUNTIME_MANIFEST_NAME
+        staged_manifest.write_text(
+            json.dumps(bundle_manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary_bundle = staged_dir / "torrent-cache-bundle.tar.gz"
+        with tarfile.open(temporary_bundle, "w:gz") as archive:
+            for filename in (*TORRENT_CACHE_FILES, RUNTIME_MANIFEST_NAME):
+                archive.add(staged_dir / filename, arcname=filename)
+        bundle_sha256 = _sha256(temporary_bundle)
+        bundle_name = f"{BUNDLE_PREFIX}{next_generation}-{bundle_sha256[:8]}.tar.gz"
+        immutable_bundle = output_dir / bundle_name
+        try:
+            os.link(temporary_bundle, immutable_bundle)
+        except FileExistsError as exc:
+            raise FileExistsError(
+                f"Refusing to overwrite immutable torrent bundle {immutable_bundle.name}"
+            ) from exc
 
     pointer = {
         **bundle_manifest,

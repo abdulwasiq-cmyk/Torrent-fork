@@ -20,6 +20,7 @@ from seedr.seedr_session import (
 )
 from core.settings import SEEDR_BASE, SEEDR_PAT_BASE, logger
 from core.shared import SeedrError, _seedr_request_session_id
+from core.torrent_size import MAX_TORRENT_SIZE_BYTES, parse_torrent_size_bytes
 
 _SEEDR_BEARER_TOKEN = re.compile(r"[A-Za-z0-9._~+/-]+=*\Z")
 
@@ -583,7 +584,30 @@ async def rename_seedr_folder(folder_id: str, name: str) -> bool:
     return False
 
 
-async def add_task(magnet: str, folder_id: int = 0) -> dict[str, Any]:
+def validate_seedr_torrent_size(value: Any) -> int:
+    size_bytes = parse_torrent_size_bytes(value)
+    if size_bytes is None:
+        raise SeedrError(
+            "TORRENT_SIZE_UNKNOWN",
+            400,
+            "Seedr requires a known, valid torrent size in bytes.",
+        )
+    if size_bytes > MAX_TORRENT_SIZE_BYTES:
+        raise SeedrError(
+            "TORRENT_SIZE_LIMIT_EXCEEDED",
+            413,
+            "Torrents larger than 2 GiB cannot be submitted to Seedr.",
+        )
+    return size_bytes
+
+
+async def add_task(
+    magnet: str,
+    folder_id: int = 0,
+    *,
+    torrent_size_bytes: Any,
+) -> dict[str, Any]:
+    validate_seedr_torrent_size(torrent_size_bytes)
     # Forward the exact magnet URI supplied by the caller.
     # Do not parse, rebuild, decode, lowercase, or add/remove query parameters.
     logger.info(

@@ -19,15 +19,15 @@ from main import app
 SEED_DIR = Path(__file__).resolve().parents[1] / "cache-seed"
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_COUNTS = {
-    "hollywood": 2400,
-    "bollywood": 1934,
-    "marvel": 3544,
-    "dc": 2155,
-    "highest-rated": 1014,
+    "hollywood": 1242,
+    "bollywood": 1175,
+    "marvel": 1565,
+    "dc": 1097,
+    "highest-rated": 353,
     "korean": 0,
     "pakistani": 0,
     "anime": 0,
-    "favourites": 1706,
+    "favourites": 629,
 }
 
 
@@ -200,6 +200,7 @@ def _write_fixture_cache(seed_dir: Path, generation: int = 1) -> dict[str, dict]
                 "infoHash": identity,
                 "magnetUrl": f"magnet:?xt=urn:btih:{identity}",
                 "title": f"{section} cached result",
+                "size": 1_000_000_000,
                 "provider": "ExistingIndexer",
                 "seeders": 5,
             }],
@@ -252,7 +253,43 @@ def test_all_nine_bundled_torrent_caches_load_with_approved_counts(tmp_path):
         assert generation == 1
         assert len(document["records"]) == expected_count
         total += len(document["records"])
-    assert total == 12753
+    assert total == 6061
+
+
+def test_legacy_generation_responses_filter_bad_sizes_without_mutating_previous_data(tmp_path):
+    seed_dir = tmp_path / "seed"
+    seed_manifest = _write_fixture_cache(seed_dir)
+    filename = "hollywood-torrents.json"
+    path = seed_dir / filename
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for offset, size in enumerate((2 * 1024**3 + 1, None), start=1):
+        identity = (300 + offset).to_bytes(20, "big").hex()
+        record = {
+            "identityKind": "infoHash",
+            "identity": identity,
+            "infoHash": identity,
+            "title": f"Legacy invalid size {offset}",
+        }
+        if size is not None:
+            record["size"] = size
+        document["records"].append(record)
+    content = json.dumps(document, sort_keys=True).encode()
+    path.write_bytes(content)
+    seed_manifest["files"][filename] = {
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "recordCount": len(document["records"]),
+    }
+    (seed_dir / torrent_caches.SEED_MANIFEST_NAME).write_text(
+        json.dumps(seed_manifest), encoding="utf-8"
+    )
+    runtime_dir = tmp_path / "data" / "torrent-cache"
+    store = torrent_caches.TorrentCacheStore(seed_dir, runtime_dir)
+
+    loaded, generation = store.load_section("hollywood")
+
+    assert generation == 1
+    assert len(loaded["records"]) == 1
+    assert len(json.loads((runtime_dir / "current" / filename).read_text())["records"]) == 3
 
 
 def test_metadata_endpoint_response_remains_the_seed_document():
@@ -473,6 +510,83 @@ def test_torrent_bundle_contains_only_nine_torrent_files_and_manifest(tmp_path):
         }
     assert pointer["generation"] == 2
     assert set(pointer["files"]) == set(torrent_caches.TORRENT_CACHE_FILES)
+
+
+def test_torrent_bundle_filters_all_sections_without_mutating_seed_or_metadata(tmp_path):
+    seed_dir = tmp_path / "seed"
+    seed_manifest = _write_fixture_cache(seed_dir)
+    metadata_file = seed_dir / "hollywood.json"
+    metadata_file.write_text(
+        json.dumps({"section": "hollywood", "subsections": {"movies": {"results": [{"id": 1}]}}}),
+        encoding="utf-8",
+    )
+    metadata_before = metadata_file.read_bytes()
+
+    for section, filename in zip(torrent_caches.TORRENT_CACHE_NAMES, torrent_caches.TORRENT_CACHE_FILES):
+        document = json.loads((seed_dir / filename).read_text(encoding="utf-8"))
+        for offset, record in enumerate((
+            {"size": "2 GiB"},
+            {"size": 2 * 1024**3 + 1},
+            {},
+            {"size": "not verified"},
+        ), start=1):
+            identity = (100 + offset).to_bytes(20, "big").hex()
+            document["records"].append({
+                "identityKind": "infoHash",
+                "identity": identity,
+                "infoHash": identity,
+                "title": f"{section} additional cached result {offset}",
+                **record,
+            })
+        content = json.dumps(document, sort_keys=True).encode("utf-8")
+        (seed_dir / filename).write_bytes(content)
+        seed_manifest["files"][filename] = {
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "recordCount": len(document["records"]),
+        }
+
+    seed_manifest["globalUniqueNormalizedInfoHashes"] = 13
+    seed_manifest["sectionLevelEntries"] = 9 * 5
+    (seed_dir / torrent_caches.SEED_MANIFEST_NAME).write_text(
+        json.dumps(seed_manifest), encoding="utf-8"
+    )
+    old_torrent_bytes = {
+        filename: (seed_dir / filename).read_bytes()
+        for filename in (*torrent_caches.TORRENT_CACHE_FILES, torrent_caches.SEED_MANIFEST_NAME)
+    }
+    output_dir = tmp_path / "release"
+
+    pointer = _load_torrent_bundle_builder().make_torrent_cache_bundle(
+        seed_dir, output_dir, generation=2
+    )
+
+    assert pointer["sectionLevelEntries"] == 18
+    assert pointer["globalUniqueNormalizedInfoHashes"] == 10
+    assert metadata_file.read_bytes() == metadata_before
+    assert {
+        filename: (seed_dir / filename).read_bytes()
+        for filename in (*torrent_caches.TORRENT_CACHE_FILES, torrent_caches.SEED_MANIFEST_NAME)
+    } == old_torrent_bytes
+    with tarfile.open(output_dir / pointer["bundle"], "r:gz") as archive:
+        for section, filename in zip(torrent_caches.TORRENT_CACHE_NAMES, torrent_caches.TORRENT_CACHE_FILES):
+            document = json.load(archive.extractfile(filename))
+            assert document["section"] == section
+            assert len(document["records"]) == 2
+            identities = [record["identity"] for record in document["records"]]
+            assert len(identities) == len(set(identities))
+            assert all(
+                record["size"] == 1_000_000_000 or record["size"] == "2 GiB"
+                for record in document["records"]
+            )
+
+    with tarfile.open(output_dir / pointer["bundle"], "r:gz") as archive:
+        bundle_manifest = json.load(archive.extractfile(torrent_caches.RUNTIME_MANIFEST_NAME))
+    assert bundle_manifest["sectionLevelEntries"] == 18
+    assert bundle_manifest["globalUniqueNormalizedInfoHashes"] == 10
+    assert all(
+        bundle_manifest["files"][filename]["recordCount"] == 2
+        for filename in torrent_caches.TORRENT_CACHE_FILES
+    )
 
 
 def test_metadata_bundle_builder_excludes_torrent_artifacts(tmp_path, monkeypatch):

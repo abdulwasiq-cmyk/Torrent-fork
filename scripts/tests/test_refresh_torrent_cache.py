@@ -52,6 +52,7 @@ def _fixture_seed(seed: Path) -> tuple[dict[str, bytes], dict[str, bytes]]:
                 "identity": identity,
                 "infoHash": identity,
                 "title": f"{section} cached torrent",
+                "size": 1_000_000_000,
                 "sourceProvenance": [{"sourceFile": "historical-source.json"}],
             }],
         }
@@ -108,6 +109,7 @@ def test_torrent_refresh_merges_hash_results_and_writes_no_metadata_files(tmp_pa
                 "title": "Hollywood Sample 2024 1080p WEB-DL",
                 "infoHash": old_hash.upper(),
                 "magnetUrl": f"magnet:?xt=urn:btih:{old_hash}",
+                "size": 900_000_000,
                 "provider": "RefreshIndexer",
                 "seeders": 37,
                 "extraResultField": {"preserve": True},
@@ -117,6 +119,7 @@ def test_torrent_refresh_merges_hash_results_and_writes_no_metadata_files(tmp_pa
                 "title": "Marvel Series S02E03 2024",
                 "infoHash": new_hash.upper(),
                 "magnetUrl": f"magnet:?xt=urn:btih:{new_hash}",
+                "size": 1_000_000_000,
                 "provider": "EpisodeIndexer",
             }]
         return []
@@ -154,7 +157,7 @@ def test_unmatched_and_missing_hash_results_are_not_silently_added(tmp_path):
     async def results(_query):
         return [
             {"title": "Unrelated Title", "infoHash": "ff" * 20},
-            {"title": "Hollywood Sample 2024", "provider": "NoHashIndexer"},
+            {"title": "Hollywood Sample 2024", "size": 1_000_000_000, "provider": "NoHashIndexer"},
         ]
 
     summary = asyncio.run(MODULE.run(seed, results))
@@ -169,3 +172,55 @@ def test_normalizes_hex_and_base32_info_hashes():
     encoded = __import__("base64").b32encode(bytes.fromhex(identity)).decode().rstrip("=").lower()
     assert MODULE.normalize_info_hash(identity.upper()) == identity
     assert MODULE.result_info_hash({"magnetUrl": f"magnet:?xt=urn:btih:{encoded}"}) == identity
+
+
+def test_torrent_refresh_excludes_oversized_unknown_and_existing_invalid_records(tmp_path):
+    seed = tmp_path / "seed"
+    _metadata_before, _torrent_before = _fixture_seed(seed)
+    manifest = json.loads((seed / MODULE.SEED_MANIFEST).read_text())
+    marvel_path = seed / "marvel-torrents.json"
+    marvel = json.loads(marvel_path.read_text())
+    for offset, record in enumerate(({"size": 2 * 1024**3 + 1}, {}), start=1):
+        identity = (200 + offset).to_bytes(20, "big").hex()
+        marvel["records"].append({
+            "identityKind": "infoHash",
+            "identity": identity,
+            "infoHash": identity,
+            "title": f"Marvel invalid size {offset}",
+            **record,
+        })
+    marvel_bytes = json.dumps(marvel, sort_keys=True, separators=(",", ":")).encode()
+    marvel_path.write_bytes(marvel_bytes)
+    manifest["files"]["marvel-torrents.json"] = {
+        "sha256": hashlib.sha256(marvel_bytes).hexdigest(),
+        "recordCount": len(marvel["records"]),
+    }
+    (seed / MODULE.SEED_MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+
+    async def results_for_card(query):
+        if query.startswith("Hollywood Sample"):
+            return [
+                {
+                    "title": "Hollywood Sample 2024 1080p",
+                    "infoHash": "ab" * 20,
+                    "size": 2 * 1024**3,
+                },
+                {
+                    "title": "Hollywood Sample 2024 2160p",
+                    "infoHash": "ac" * 20,
+                    "size": 2 * 1024**3 + 1,
+                },
+                {"title": "Hollywood Sample 2024 unknown"},
+            ]
+        return []
+
+    summary = asyncio.run(MODULE.run(seed, results_for_card))
+
+    assert summary["rejectedOversizedResults"] == 1
+    assert summary["rejectedUnknownSizeResults"] == 1
+    assert summary["excludedExistingOversizedRecords"] == 1
+    assert summary["excludedExistingUnknownSizeRecords"] == 1
+    assert summary["sections"]["hollywood"]["newHashes"] == 1
+    assert summary["sections"]["hollywood"]["recordCount"] == 2
+    assert summary["sections"]["marvel"]["recordCount"] == 1
+    assert set(summary["updatedFiles"]) == {"hollywood-torrents.json", "marvel-torrents.json"}
