@@ -1,7 +1,7 @@
 import { API_BASE, api, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
 import { torrentCacheRecordsForMedia, torrentCacheSectionForMovieCatalogue } from '../../../api/sectionCache.ts';
 import searchLimits from '../../../../search_limits.json';
-import { TorrentQualityGroup, groupTorrentResults, normalizeGroupTitle, torrentGroupReleaseYear, torrentResultKey } from '../grouping.ts';
+import { TorrentQualityGroup, filterUsableTorrentResults, groupTorrentResults, normalizeGroupTitle, torrentGroupReleaseYear, torrentResultKey } from '../grouping.ts';
 import { cataloguePosterSource } from '../cataloguePosters.ts';
 import { catalogueMovieIdentity } from '../helpers.ts';
 import { useSearchMetadataState } from './useSearchMetadataState.ts';
@@ -211,7 +211,6 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
       // not report seed counts reliably.
       const minSeedrFriendlySize = searchLimits.minSizeMb * 1024 * 1024;
       const maxSeedrFriendlySize = searchLimits.maxSizeGb * 1024 * 1024 * 1024;
-      const lowQualityRelease = /(?:^|[\s._()[\]-])(?:cam(?:rip)?|hdcam|hd[ ._-]?cam|telesync|tele[ ._-]?sync|ts[ ._-]?(?:md|ac3|hd)?|telecine|dvdscr|dvd[ ._-]?scr|screener|workprint)(?:$|[\s._()[\]-])/i;
       // Indexers often return loose keyword matches. Keep a result only when the
       // actual release title contains the selected movie title as a phrase, so a
       // movie called "Only Me" won't show unrelated releases containing "Only"
@@ -221,27 +220,13 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
       // bracketed alias or subtitle.
       const baseTitle = normalizeGroupTitle(String(movie.title || '').split(/\s+[-\u2013\u2014:]\s+|\s*\(/)[0]);
       const expectedTitles = [expectedTitle, baseTitle.length >= 3 ? baseTitle : ''].filter(Boolean);
-      const groupUsableResults = (items: TorrentSearchResult[], requireActiveSeeders: boolean) => {
-        const usable = items.filter(result => {
-          const releaseTitle = normalizeGroupTitle(String(result.title || ''));
-          const mediaTitle = normalizeGroupTitle(String(result.mediaTitle || ''));
-          const titleMatches = expectedTitles.some(expected =>
-            releaseTitle.includes(expected) || mediaTitle === expected || mediaTitle.includes(expected));
-          if (!titleMatches) return false;
-          const rawSize = Number(result.size);
-          const size = Number.isFinite(rawSize) && rawSize > 0 ? rawSize : 0;
-          const seeders = Number(result.seeders);
-          const hasSource = Boolean(
-            String(result.magnetUrl || '').trim() ||
-            String(result.downloadUrl || '').trim() ||
-            String(result.sourceUrl || '').trim()
-          );
-          if (!hasSource || size < minSeedrFriendlySize || size > maxSeedrFriendlySize) return false;
-          if (requireActiveSeeders && (!Number.isFinite(seeders) || seeders <= 0)) return false;
-          return !lowQualityRelease.test(String(result.title || '') + ' ' + String(result.quality || ''));
-        });
-        return groupTorrentResults(usable);
-      };
+      const groupUsableResults = (items: TorrentSearchResult[], requireActiveSeeders: boolean) =>
+        groupTorrentResults(filterUsableTorrentResults(items, {
+          expectedTitles,
+          minSizeBytes: minSeedrFriendlySize,
+          maxSizeBytes: maxSeedrFriendlySize,
+          requireActiveSeeders,
+        }));
 
       let groups = groupUsableResults(data, true);
 

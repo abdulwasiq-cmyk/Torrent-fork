@@ -2,7 +2,7 @@ import { Cloud, ShieldCheck, Loader2 } from 'lucide-react';
 import type { PanelModel } from '../useAppModel.tsx';
 
 export function SeedrOnboardingModal({ vm }: { vm: PanelModel }) {
-  const { connectSeedrWithPat, seedrConnectError, seedrConnected, seedrOnboardingOpen, seedrPat, seedrPatSubmitting, seedrSessionReady, setSeedrOnboardingOpen, setSeedrPat } = vm;
+  const { connectSeedrWithPat, seedrConnectError, seedrConnected, seedrOnboardingOpen, seedrPat, seedrPatSubmitting, seedrSessionReady, setSeedrOnboardingOpen, setSeedrPat, switchSeedrAccount } = vm;
   return (
     <>
       {seedrOnboardingOpen && (
@@ -53,14 +53,26 @@ export function SeedrOnboardingModal({ vm }: { vm: PanelModel }) {
                   <p className="mt-1 text-xs leading-5 text-slate-300">
                     This browser session is using your Seedr account. No shared Seedr storage is used.
                   </p>
+                  {seedrConnectError && (
+                    <p className="mt-3 text-xs leading-5 text-amber-100">{seedrConnectError}</p>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSeedrOnboardingOpen(false)}
-                  className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400"
-                >
-                  Done
-                </button>
+                <div className="mt-5 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setSeedrOnboardingOpen(false)}
+                    className="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-emerald-400"
+                  >
+                    Done
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void switchSeedrAccount(); }}
+                    className="w-full rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+                  >
+                    Use a different Seedr token
+                  </button>
+                </div>
               </>
             ) : (
               <div className="mt-5 space-y-4">
@@ -136,7 +148,11 @@ export function SeedrOnboardingModal({ vm }: { vm: PanelModel }) {
                     <li>The token page opens.</li>
                     <li>Token Name = <span className="font-semibold text-slate-100">Any name</span>.</li>
                     <li><span className="font-semibold text-slate-100">Expiration</span> = <span className="font-semibold text-slate-100">Never</span>.</li>
-                    <li>Scopes = click <span className="font-semibold text-slate-100">Full Account Access</span>.</li>
+                    <li>
+                      Select <span className="font-semibold text-slate-100">tasks.write</span> to add transfers.
+                      For account and library operations, select only scopes Seedr explicitly documents for those endpoints.
+                      Seedr may need to enable account-specific permissions; Full Account Access and <span className="font-semibold text-slate-100">files.write</span> are not required for task creation.
+                    </li>
                     <li>Go below and click <span className="font-semibold text-slate-100">Generate Token</span>.</li>
                     <li>Copy the token code and save it somewhere safe.</li>
                     <li>Paste the token code above and click <span className="font-semibold text-slate-100">Connect</span>.</li>

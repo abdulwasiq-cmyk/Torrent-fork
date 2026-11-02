@@ -1,5 +1,5 @@
 import type { TorrentItem, TorrentFileItem } from '../types/index.ts';
-import { API_BASE, apiFetch } from './http.ts';
+import { API_BASE, apiFetch, makeSeedrError } from './http.ts';
 
 export const torrentsApi = {
   async getTorrents(filter?: string): Promise<TorrentItem[]> {
@@ -224,12 +224,15 @@ export const torrentsApi = {
     try { data = body ? JSON.parse(body) : null; } catch {}
 
     if (!res.ok) {
-      const error = new Error(
-        data?.error || data?.message || data?.detail || body ||
-        `Seedr prepare failed (HTTP ${res.status})`
+      const error = makeSeedrError(
+        data,
+        body,
+        res.status,
+        `Seedr prepare failed (HTTP ${res.status})`,
       );
-      Object.assign(error as any, data || {});
-      if (res.status === 413) (error as any).code = data?.code || 'SEEDR_INSUFFICIENT_SPACE';
+      if (res.status === 413 && !error.code) {
+        error.code = 'SEEDR_INSUFFICIENT_SPACE';
+      }
       throw error;
     }
 

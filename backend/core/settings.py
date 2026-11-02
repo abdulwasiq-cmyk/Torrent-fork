@@ -187,7 +187,7 @@ GITHUB_FEEDBACK_TOKEN = os.getenv("GITHUB_FEEDBACK_TOKEN", "").strip()
 GITHUB_FEEDBACK_REPO = os.getenv("GITHUB_FEEDBACK_REPO", "wroxtaaar/new-test").strip()
 SEEDR_BASE = "https://www.seedr.cc/api/v0.1/p"
 SEEDR_MEDIA_BASE = "https://www.seedr.cc/api"
-SEEDR_V2_BASE = "https://v2.seedr.cc/api/v0.1/p"
+SEEDR_V2_BASE = SEEDR_BASE
 SEEDR_PAT_BASE = "https://www.seedr.cc/api/v0.1/p"
 # Legacy developer-level Seedr credentials remain supported only when explicitly enabled.
 # Normal requests use a per-browser Seedr connection established through device auth.

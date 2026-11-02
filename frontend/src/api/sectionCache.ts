@@ -231,6 +231,7 @@ export function torrentCacheRecordsForMedia(
       ));
       return {
         ...record,
+        sectionCacheRecord: true,
         mediaTitle: identity?.title || media.title,
         year: identity?.year ?? media.year ?? record.year,
         mediaType,

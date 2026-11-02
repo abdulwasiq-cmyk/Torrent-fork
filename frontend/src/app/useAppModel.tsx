@@ -3,7 +3,7 @@ import { api } from '../api/client.ts';
 import { useAppDialogState } from './state/useAppDialogState.ts';
 import { useFileExplorerState } from './state/useFileExplorerState.ts';
 import { useLibraryDataState } from './state/useLibraryDataState.ts';
-import { useSeedrState } from './state/useSeedrState.ts';
+import { advanceSeedrPrepareGeneration, useSeedrState } from './state/useSeedrState.ts';
 import { useSeedrFolderGroups } from './state/useSeedrFolderGroups.ts';
 import { useSeedrFileActions } from './state/useSeedrFileActions.ts';
 import { useTransferRefs } from './state/useTransferRefs.ts';
@@ -45,6 +45,19 @@ export function useAppModel() {
       stopped = true;
     };
   }, [markSeedrOnboardingSeen]);
+  const { activeTab, setActiveTab, backgroundMetadataJob, setBackgroundMetadataJob, initialSourceUrl, setInitialSourceUrl, initialDescriptorUrl, setInitialDescriptorUrl, theme, setTheme } = useAppShellState();
+  const { torrents, setTorrents, files, setFiles, folders, setFolders, users, setUsers, activeUser, setActiveUser, storageStats, setStorageStats, activityStorageKey, setActivityLogs, notifications, setNotifications, cleanupSettings, setCleanupSettings } = useLibraryDataState();
+  const { seedrNoticeStorageKey, seedrPrepareWaiters, seedrNotice, setSeedrNotice, setSeedrFiles, seedrDeletedFolderIds, setSeedrDeletedFolderIds, seedrLibraryRoot, setSeedrLibraryRoot, seedrLibraryFolders, setSeedrLibraryFolders, setSeedrFolderContentsLoading, seedrPrefetchLoading, setSeedrPrefetchLoading, seedrFolderContentsCache, setSeedrFolderContentsCache, seedrFolderContentsRequests, seedrQuota, setSeedrQuota, seedrQuotaError, setSeedrQuotaError, seedrLoading, setSeedrLoading, seedrError, setSeedrError, seedrDeleteNotice, setSeedrDeleteNotice, setCopiedSeedrFileId, seedrAddBlockedNotice, setSeedrAddBlockedNotice, seedrInsufficientSpacePrompt, setSeedrInsufficientSpacePrompt, seedrStreamLoadingId, setSeedrStreamLoadingId, isCancellingSeedr, setIsCancellingSeedr, seedrPrepareGenerationRef, seedrAccountGenerationRef, setActiveSeedrFolderOpen, selectedSeedrFolderId, setSelectedSeedrFolderId, seedrTorrentNamesKey, seedrTorrentNames, setSeedrTorrentNames } = useSeedrState();
+  const invalidatePendingSeedrPrepares = useCallback((message: string) => {
+    advanceSeedrPrepareGeneration(seedrPrepareGenerationRef);
+    seedrAccountGenerationRef.current += 1;
+    const generation = seedrAccountGenerationRef.current;
+    for (const waiter of Object.values(seedrPrepareWaiters.current)) {
+      waiter.reject(new Error(message));
+    }
+    seedrPrepareWaiters.current = {};
+    return generation;
+  }, [seedrAccountGenerationRef, seedrPrepareGenerationRef, seedrPrepareWaiters]);
   const connectSeedrWithPat = useCallback(async () => {
     const pat = seedrPat.trim();
     if (!pat) {
@@ -52,10 +65,12 @@ export function useAppModel() {
       return;
     }
 
+    const generation = invalidatePendingSeedrPrepares('Seedr account changed.');
     setSeedrPatSubmitting(true);
     setSeedrConnectError('');
     try {
       const result = await api.connectSeedrPat(pat);
+      if (seedrAccountGenerationRef.current !== generation) return;
       if (!result.connected) {
         throw new Error('Seedr did not accept the Personal Access Token.');
       }
@@ -63,16 +78,51 @@ export function useAppModel() {
       setSeedrConnected(true);
       setSeedrConfigured(true);
     } catch (error: any) {
-      setSeedrConnectError(
-        String(error?.message || 'Seedr rejected the Personal Access Token.')
-      );
+      if (seedrAccountGenerationRef.current === generation) {
+        setSeedrConnectError(
+          String(error?.message || 'Seedr rejected the Personal Access Token.')
+        );
+      }
     } finally {
-      setSeedrPatSubmitting(false);
+      if (seedrAccountGenerationRef.current === generation) {
+        setSeedrPatSubmitting(false);
+      }
     }
-  }, [seedrPat]);
-  const { activeTab, setActiveTab, backgroundMetadataJob, setBackgroundMetadataJob, initialSourceUrl, setInitialSourceUrl, initialDescriptorUrl, setInitialDescriptorUrl, theme, setTheme } = useAppShellState();
-  const { torrents, setTorrents, files, setFiles, folders, setFolders, users, setUsers, activeUser, setActiveUser, storageStats, setStorageStats, activityStorageKey, setActivityLogs, notifications, setNotifications, cleanupSettings, setCleanupSettings } = useLibraryDataState();
-  const { seedrNoticeStorageKey, seedrPrepareWaiters, seedrNotice, setSeedrNotice, setSeedrFiles, seedrDeletedFolderIds, setSeedrDeletedFolderIds, seedrLibraryRoot, setSeedrLibraryRoot, seedrLibraryFolders, setSeedrLibraryFolders, setSeedrFolderContentsLoading, seedrPrefetchLoading, setSeedrPrefetchLoading, seedrFolderContentsCache, setSeedrFolderContentsCache, seedrFolderContentsRequests, seedrQuota, setSeedrQuota, seedrQuotaError, setSeedrQuotaError, seedrLoading, setSeedrLoading, seedrError, setSeedrError, seedrDeleteNotice, setSeedrDeleteNotice, setCopiedSeedrFileId, seedrAddBlockedNotice, setSeedrAddBlockedNotice, seedrInsufficientSpacePrompt, setSeedrInsufficientSpacePrompt, seedrStreamLoadingId, setSeedrStreamLoadingId, isCancellingSeedr, setIsCancellingSeedr, seedrPrepareGenerationRef, setActiveSeedrFolderOpen, selectedSeedrFolderId, setSelectedSeedrFolderId, seedrTorrentNamesKey, seedrTorrentNames, setSeedrTorrentNames } = useSeedrState();
+  }, [seedrPat, invalidatePendingSeedrPrepares, seedrAccountGenerationRef]);
+  const switchSeedrAccount = useCallback(async () => {
+    const generation = invalidatePendingSeedrPrepares('Seedr account changed.');
+    try {
+      await api.disconnectSeedr();
+      if (seedrAccountGenerationRef.current !== generation) return;
+      setSeedrConnected(false);
+      setSeedrConfigured(false);
+      setSeedrConnectError('');
+      setSeedrFiles([]);
+      setSeedrDeletedFolderIds([]);
+      setSeedrLibraryRoot(null);
+      setSeedrLibraryFolders([]);
+      setSeedrFolderContentsCache({});
+      setSeedrFolderContentsLoading(false);
+      setSeedrLoading(false);
+      setSeedrPrefetchLoading(false);
+      setSeedrQuota(null);
+      setSeedrQuotaError(null);
+      setSeedrError(null);
+      setSeedrNotice(null);
+      setSelectedSeedrFolderId(null);
+      setSeedrTorrentNames({});
+      setActiveSeedrFolderOpen(false);
+    } catch (error: any) {
+      if (seedrAccountGenerationRef.current === generation) {
+        setSeedrConnectError(
+          String(error?.message || 'Could not change the connected Seedr account.')
+        );
+      }
+    }
+  }, [
+    invalidatePendingSeedrPrepares,
+    seedrAccountGenerationRef,
+  ]);
   const { rememberSeedrTorrentName, forgetSeedrFolders, toSeedrStorageFile, seedrAllPrefetchedFiles, seedrFolderGroups } = useSeedrFolderGroups({ setSeedrTorrentNames, seedrTorrentNamesKey, setSeedrDeletedFolderIds, setSeedrFolderContentsCache, setSeedrLibraryFolders, setSeedrFiles, setSelectedSeedrFolderId, seedrFolderContentsCache, seedrLibraryFolders, seedrTorrentNames, seedrNotice, selectedSeedrFolderId });
   const { currentFolder, setCurrentFolder, fileSearch, setFileSearch, fileTypeFilter, setFileTypeFilter } = useFileExplorerState();
   // The Files tab is reserved for completed/stored files and folders.
@@ -137,7 +187,7 @@ export function useAppModel() {
   const { seedrDownloadActive, openMetadataSelector, openAddMagnet } = useAddMagnetOpeners({ seedrNotice, setSeedrAddBlockedNotice, setInitialMagnet, setIsAddMagnetOpen, setInitialSourceUrl, setInitialDescriptorUrl, setBackgroundMetadataJob, setActiveTab });
   useLibraryLoading({ setUsers, setActiveUser, setStorageStats, setFolders, activityStorageKey, setActivityLogs, setNotifications, setCleanupSettings, folders, setFiles, currentFolder, fileSearch, fileTypeFilter, activeTab });
   const { loadSeedrLibrary } = useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLoading, setSeedrError, setSeedrQuotaError, setSeedrQuota, seedrNotice, setSeedrNotice, setSeedrLibraryRoot, setSeedrLibraryFolders, setSeedrDeletedFolderIds, setSeedrFolderContentsCache, setSeedrPrefetchLoading, seedrFolderContentsRequests, selectedSeedrFolderId, seedrFolderContentsCache, setSeedrFiles, setSeedrFolderContentsLoading, setSelectedSeedrFolderId, rememberSeedrTorrentName, seedrFolderGroups, activeTab });
-  const { handleSearchPrepare, handleAddMagnet } = useAddFlow({ torrents, setFiles, setStorageStats, setNotifications, setTorrents, setActivityLogs, activityStorageKey, activeUser, files, prevTorrentStates, pendingTransferStates, currentFolder, seedrPrepareGenerationRef, seedrNotice, seedrPrepareWaiters, setSeedrNotice, setSeedrAddBlockedNotice, setSeedrQuota, setSeedrInsufficientSpacePrompt, seedrNoticeStorageKey, setSeedrFolderContentsCache, selectedSeedrFolderId, setSeedrFiles, setSeedrFolderContentsLoading, setSeedrLibraryFolders, setActiveSeedrFolderOpen, seedrDownloadActive, seedrConnected, setSeedrConnectError, setSeedrOnboardingOpen, forgetSeedrFolders, rememberSeedrTorrentName, setActiveTab, loadSeedrLibrary });
+  const { handleSearchPrepare, handleAddMagnet } = useAddFlow({ torrents, setFiles, setStorageStats, setNotifications, setTorrents, setActivityLogs, activityStorageKey, activeUser, files, prevTorrentStates, pendingTransferStates, currentFolder, seedrPrepareGenerationRef, seedrAccountGenerationRef, seedrNotice, seedrPrepareWaiters, setSeedrNotice, setSeedrAddBlockedNotice, setSeedrQuota, setSeedrInsufficientSpacePrompt, seedrNoticeStorageKey, setSeedrFolderContentsCache, selectedSeedrFolderId, setSeedrFiles, setSeedrFolderContentsLoading, setSeedrLibraryFolders, setActiveSeedrFolderOpen, seedrDownloadActive, seedrConnected, setSeedrConnectError, setSeedrOnboardingOpen, forgetSeedrFolders, rememberSeedrTorrentName, setActiveTab, loadSeedrLibrary });
   const { handleCancelSeedrDownload, handleStreamSeedrFile, handleDeleteSeedrFile } = useSeedrFileActions({ seedrNotice, isCancellingSeedr, setIsCancellingSeedr, seedrPrepareWaiters, setSeedrNotice, setSeedrAddBlockedNotice, setSeedrError, setCopiedSeedrFileId, seedrFolderContentsCache, setSeedrStreamLoadingId, setSeedrFolderContentsCache, setSeedrDeleteNotice, setSeedrFiles, setSeedrLibraryFolders, setSeedrQuota, setSelectedSeedrFolderId, forgetSeedrFolders, seedrAllPrefetchedFiles, seedrFolderGroups, activeUser, setActiveMediaFile, setIsPlayerMinimized });
   const { handleUpdateFilePriority } = useTorrentActions({ activeUser, torrents, setTorrents, setActiveMediaFile, setIsPlayerMinimized, setDeleteTarget, pendingTransferStates });
   const { handleConfirmDelete, handleCreateFolder, handleMoveFile, handleRename, handleFolderShareSave, handleRunCleanup, submitFeedback, unreadNotifsCount, currentFolderPrefix } = useLibraryActions({ files, setFiles, setStorageStats, setTorrents, setFolders, activeUser, setActiveUser, activityStorageKey, setActivityLogs, torrents, notifications, setDeleteTarget, deleteTarget, feedbackMessage, setFeedbackError, setFeedbackSubmitting, setFeedbackSuccess, feedbackType, feedbackRating, feedbackName, setFeedbackMessage, setFeedbackName, setFeedbackRating, currentFolder });
@@ -161,6 +211,7 @@ export function useAppModel() {
     seedrConnectError,
     setSeedrConnectError,
     connectSeedrWithPat,
+    switchSeedrAccount,
     activeTab,
     setActiveTab,
     backgroundMetadataJob,

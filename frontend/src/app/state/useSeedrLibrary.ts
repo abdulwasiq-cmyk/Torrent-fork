@@ -6,7 +6,10 @@ import { useAppShellState } from './useAppShellState.ts';
 import { useSeedrConnectionState } from './useSeedrConnectionState.ts';
 
 export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLoading, setSeedrError, setSeedrQuotaError, setSeedrQuota, seedrNotice, setSeedrNotice, setSeedrLibraryRoot, setSeedrLibraryFolders, setSeedrDeletedFolderIds, setSeedrFolderContentsCache, setSeedrPrefetchLoading, seedrFolderContentsRequests, selectedSeedrFolderId, seedrFolderContentsCache, setSeedrFiles, setSeedrFolderContentsLoading, setSelectedSeedrFolderId, rememberSeedrTorrentName, seedrFolderGroups, activeTab }: Pick<ReturnType<typeof useSeedrConnectionState>, 'seedrConnected' | 'setSeedrConfigured'> & Pick<ReturnType<typeof useSeedrState>, 'setSeedrLoading' | 'setSeedrError' | 'setSeedrQuotaError' | 'setSeedrQuota' | 'seedrNotice' | 'setSeedrNotice' | 'setSeedrLibraryRoot' | 'setSeedrLibraryFolders' | 'setSeedrDeletedFolderIds' | 'setSeedrFolderContentsCache' | 'setSeedrPrefetchLoading' | 'seedrFolderContentsRequests' | 'selectedSeedrFolderId' | 'seedrFolderContentsCache' | 'setSeedrFiles' | 'setSeedrFolderContentsLoading' | 'setSelectedSeedrFolderId'> & Pick<ReturnType<typeof useSeedrFolderGroups>, 'rememberSeedrTorrentName' | 'seedrFolderGroups'> & Pick<ReturnType<typeof useAppShellState>, 'activeTab'>) {
-  const loadSeedrLibrary = useCallback(async (forceRefresh = false) => {
+  const loadSeedrLibrary = useCallback(async (
+    forceRefresh = false,
+    isCurrent: () => boolean = () => true,
+  ) => {
     if (!seedrConnected) return null;
     setSeedrLoading(true);
     setSeedrError(null);
@@ -17,6 +20,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
       // library error.
       try {
         const auth = await api.getSeedrAuthStatus();
+        if (!isCurrent()) return null;
         if (!auth.configured) {
           setSeedrError('SEEDR_TOKEN_MISSING: Seedr API token is not configured in Render.');
           setSeedrConfigured(false);
@@ -26,6 +30,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
         if (!auth.authenticated) {
           try {
             const diagnostic = await api.getSeedrTokenDiagnostic();
+            if (!isCurrent()) return null;
             const checks = diagnostic?.checks || {};
             const userCheck = checks.user || {};
             const tokenLabel = userCheck.ok
@@ -38,6 +43,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
               `${tokenLabel}: ${detail} [user=${userCheck.status ?? '?'}]`
             );
           } catch {
+            if (!isCurrent()) return null;
             setSeedrError(
               auth.code === 'SEEDR_TOKEN_REJECTED'
                 ? 'SEEDR_TOKEN_REJECTED: Seedr rejected the configured API token.'
@@ -52,6 +58,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
         }
         setSeedrError(null);
       } catch (error: any) {
+        if (!isCurrent()) return null;
         const code = String(error?.code || '').trim();
         setSeedrError(
           code === 'SEEDR_TOKEN_REJECTED'
@@ -68,6 +75,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
       // library metadata request. Quota is small and should never delay the
       // library UI or the download progress bar.
       void api.getSeedrQuota().then(quota => {
+        if (!isCurrent()) return;
         if (!quota.configured) {
           setSeedrQuotaError('SEEDR_TOKEN_MISSING: Seedr API token is not configured in Render.');
           return;
@@ -77,6 +85,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
           remainingSpace: quota.remainingSpace,
         });
       }).catch((error: any) => {
+        if (!isCurrent()) return;
         const code = String(error?.code || '').trim();
         const message =
           code === 'SEEDR_TOKEN_REJECTED'
@@ -93,11 +102,15 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
       const activeTaskId = seedrNotice?.taskId;
       if (activeTaskId && seedrNotice?.status !== 'completed') {
         void api.getSeedrTaskProgress(activeTaskId).then(progressResult => {
-          if (progressResult.status === 'not_found') return;
-          const progress = Math.max(0, Math.min(100, Number(progressResult.progress) || 0));
+          if (!isCurrent() || progressResult.status === 'failed' || progressResult.status === 'not_found') return;
+          const progressStatus: 'waiting' | 'downloading' | 'completed' = progressResult.status;
+          const progress = progressResult.progress == null
+            ? null
+            : Math.max(0, Math.min(100, Number(progressResult.progress) || 0));
           const progressName = String(progressResult.name || '').trim();
           const progressFolderId = String(progressResult.folderId || '').trim();
           setSeedrNotice(prev => {
+            if (!isCurrent()) return prev;
             if (!prev) return null;
 
             const canonicalName = String(prev.name || '').trim() || progressName;
@@ -114,11 +127,12 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
               ...prev,
               name: canonicalName,
               folderId: progressFolderId || prev.folderId || '',
-              status: progressResult.status,
-              progress,
+              status: progressStatus,
+              progress: progress == null ? prev.progress : progress,
             };
           });
         }).catch(() => {
+          if (!isCurrent()) return;
           // The normal task poll continues to provide progress updates.
         });
       }
@@ -126,6 +140,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
       // Stage 1 — only the metadata required to paint the outer Seedr
       // Library immediately. Do not wait for quota or file rows.
       const result = await api.getSeedrLibrary(forceRefresh);
+      if (!isCurrent()) return null;
 
       setSeedrConfigured(result.configured);
       setSeedrLibraryRoot(result.root);
@@ -199,12 +214,13 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
 
                 seedrFolderContentsRequests.current[folderId] = request;
                 const mapped = await request;
+                if (!isCurrent()) return;
                 loadedEntries[folderId] = mapped;
-                setSeedrFolderContentsCache(prev => ({
-                  ...prev,
-                  [folderId]: mapped,
-                }));
+                setSeedrFolderContentsCache(prev => isCurrent()
+                  ? { ...prev, [folderId]: mapped }
+                  : prev);
               } catch (error) {
+                if (!isCurrent()) return;
                 // A single inaccessible/still-indexing folder must not leave
                 // the whole Files page in a permanent loading state. The
                 // folder can still be retried by clicking it.
@@ -215,7 +231,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
             }));
           }
 
-          setSeedrPrefetchLoading(false);
+          if (isCurrent()) setSeedrPrefetchLoading(false);
         })();
       }
 
@@ -224,6 +240,7 @@ export function useSeedrLibrary({ seedrConnected, setSeedrConfigured, setSeedrLo
       // The cache effect above swaps them in as soon as they are available.
       return result;
     } catch (error: any) {
+      if (!isCurrent()) return null;
       const code = String(error?.code || '').trim();
       const message =
         code === 'SEEDR_TOKEN_REJECTED'

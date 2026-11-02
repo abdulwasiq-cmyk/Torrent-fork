@@ -9,6 +9,56 @@ const transformed = await transform(source, { loader: 'ts', format: 'esm' });
 const sectionCache = await import(
   `data:text/javascript;base64,${Buffer.from(transformed.code).toString('base64')}`
 );
+const groupingSource = await readFile(new URL('src/components/torrent-search/grouping.ts', root), 'utf8');
+const groupingTransformed = await transform(groupingSource, { loader: 'ts', format: 'esm' });
+const grouping = await import(
+  `data:text/javascript;base64,${Buffer.from(groupingTransformed.code).toString('base64')}`
+);
+
+const sectionCatalogues = [
+  ['popular-hollywood', 'hollywood'],
+  ['popular-bollywood', 'bollywood'],
+  ['marvel', 'marvel'],
+  ['dc-live-action', 'dc'],
+  ['highest-rated-hollywood', 'highest-rated'],
+  ['popular-korean', 'korean'],
+  ['popular-pakistani', 'pakistani'],
+  ['popular-anime', 'anime'],
+  ['classics', 'favourites'],
+];
+
+const makeTorrentRecord = (overrides = {}) => ({
+  guid: 'cache-source-1',
+  title: 'Cached Film 2020 1080p WEB-DL',
+  mediaTitle: 'Cached Film',
+  size: 4 * 1024 * 1024 * 1024,
+  seeders: 0,
+  infoHash: 'a'.repeat(40),
+  magnetUrl: 'magnet:?xt=urn:btih:' + 'a'.repeat(40),
+  mediaIdentities: [{
+    mediaType: 'movie',
+    title: 'Cached Film',
+    tmdbId: '42',
+    year: '2020',
+  }],
+  ...overrides,
+});
+
+const cacheMedia = {
+  id: 42,
+  tmdbId: 42,
+  title: 'Cached Film',
+  year: 2020,
+  mediaType: 'movie',
+};
+
+const filterResults = (results, requireActiveSeeders = true) =>
+  grouping.filterUsableTorrentResults(results, {
+    expectedTitles: ['cached film'],
+    minSizeBytes: 250 * 1024 * 1024,
+    maxSizeBytes: 2 * 1024 * 1024 * 1024,
+    requireActiveSeeders,
+  });
 
 test('migrated Avengers movie card resolves cached Marvel results into an enabled Prepare source', async () => {
   const metadata = JSON.parse(await readFile(
@@ -47,7 +97,87 @@ test('migrated Avengers movie card resolves cached Marvel results into an enable
   ));
   const selectedSource = matches[0].magnetUrl || matches[0].downloadUrl || matches[0].sourceUrl;
   assert.ok(selectedSource);
+  assert.equal(matches[0].sectionCacheRecord, true);
+  assert.equal(filterResults(matches).length, matches.length);
   assert.match(catalogueSection, /disabled:\s*!prepareState\.source\s*\|\|\s*prepareState\.isPreparing/);
   const isPreparing = false;
   assert.equal(!selectedSource || isPreparing, false);
+});
+
+for (const [catalogue, section] of sectionCatalogues) {
+  test(`${section} section preserves a valid cached Prepare source`, () => {
+    assert.equal(sectionCache.torrentCacheSectionForMovieCatalogue(catalogue), section);
+    const document = {
+      schemaVersion: 1,
+      section,
+      records: [makeTorrentRecord()],
+    };
+    const matches = sectionCache.torrentCacheRecordsForMedia(document, cacheMedia);
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].sectionCacheRecord, true);
+
+    const usable = filterResults(matches);
+    assert.equal(usable.length, 1);
+    assert.equal(grouping.groupTorrentResults(usable)[0].variants.length, 1);
+  });
+}
+
+test('cached matching preserves multiple sources and bypasses live size and seeder filters', () => {
+  const document = {
+    schemaVersion: 1,
+    section: 'marvel',
+    records: [
+      makeTorrentRecord(),
+      makeTorrentRecord({
+        guid: 'cache-source-2',
+        infoHash: 'b'.repeat(40),
+        magnetUrl: 'magnet:?xt=urn:btih:' + 'b'.repeat(40),
+        size: 0,
+        seeders: null,
+      }),
+    ],
+  };
+  const matches = sectionCache.torrentCacheRecordsForMedia(document, cacheMedia);
+  const groups = grouping.groupTorrentResults(filterResults(matches));
+
+  assert.equal(matches.length, 2);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].variants.length, 2);
+  assert.ok(groups[0].variants.every(result => Boolean(result.magnetUrl)));
+});
+
+test('cached records without a usable source do not enable Prepare', () => {
+  const document = {
+    schemaVersion: 1,
+    section: 'marvel',
+    records: [makeTorrentRecord({ magnetUrl: '', downloadUrl: '', sourceUrl: '' })],
+  };
+  const matches = sectionCache.torrentCacheRecordsForMedia(document, cacheMedia);
+
+  assert.equal(matches.length, 1);
+  assert.equal(filterResults(matches).length, 0);
+});
+
+test('cache matching rejects unrelated identities and keeps live-search filters unchanged', () => {
+  const unrelatedDocument = {
+    schemaVersion: 1,
+    section: 'marvel',
+    records: [makeTorrentRecord({
+      mediaIdentities: [{
+        mediaType: 'movie',
+        title: 'Another Film',
+        tmdbId: '99',
+        year: '2020',
+      }],
+    })],
+  };
+  assert.equal(sectionCache.torrentCacheRecordsForMedia(unrelatedDocument, cacheMedia).length, 0);
+
+  const liveResults = [
+    { title: 'Cached Film 2020 1080p WEB-DL', mediaTitle: 'Cached Film', size: 300 * 1024 * 1024, seeders: 2, magnetUrl: 'magnet:?xt=urn:btih:live' },
+    { title: 'Cached Film 2020 1080p WEB-DL', mediaTitle: 'Cached Film', size: 4 * 1024 * 1024 * 1024, seeders: 0, magnetUrl: 'magnet:?xt=urn:btih:oversized' },
+    { title: 'Unrelated Film 2020 1080p WEB-DL', mediaTitle: 'Unrelated Film', size: 300 * 1024 * 1024, seeders: 2, magnetUrl: 'magnet:?xt=urn:btih:unrelated' },
+  ];
+
+  assert.equal(filterResults(liveResults).length, 1);
 });

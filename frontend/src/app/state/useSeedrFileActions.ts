@@ -66,8 +66,7 @@ export function useSeedrFileActions({ seedrNotice, isCancellingSeedr, setIsCance
   const handleDownloadSeedrFile = async (fileId: string, fileName = '') => {
     const popup = window.open('', '_blank', 'noopener,noreferrer');
     try {
-      // Resolve the temporary Seedr URL only because the user clicked Download.
-      // The final transfer then goes directly from Seedr to the browser.
+      // The backend keeps Seedr's temporary download URL server-side.
       const result = await api.getSeedrFileDownload(fileId);
       const target = result.url;
       if (popup) {
@@ -221,9 +220,6 @@ export function useSeedrFileActions({ seedrNotice, isCancellingSeedr, setIsCance
         ownerId: activeUser?.id || 'user_admin',
         ownerName: activeUser?.name || 'Admin',
         isStreamable: true,
-        // IMPORTANT: use the backend browser URL, not the external Seedr URL.
-        // For direct presentations this is /api/seedr/media/video/{id}; for
-        // HLS presentations it is /api/seedr/hls/{id}.
         streamUrl: result.url,
         externalStreamUrl: result.externalUrl,
         streamId: result.resolvedFileId || file.streamId || file.id,

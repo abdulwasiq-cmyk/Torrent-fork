@@ -1,13 +1,12 @@
 """Moved out of main.py (see docs/main-split-plan.md)."""
 
 import base64
-import hashlib
 import json
 import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlsplit
 
 import httpx
 from fastapi import HTTPException
@@ -22,210 +21,82 @@ from seedr.seedr_session import (
 from core.settings import SEEDR_BASE, SEEDR_PAT_BASE, logger
 from core.shared import SeedrError, _seedr_request_session_id
 
+_SEEDR_BEARER_TOKEN = re.compile(r"[A-Za-z0-9._~+/-]+=*\Z")
+
+
+def seedr_authorization_header(raw_token: str | None = None) -> str:
+    token = normalize_seedr_token(
+        current_seedr_token() if raw_token is None else raw_token
+    )
+    if not token or not _SEEDR_BEARER_TOKEN.fullmatch(token):
+        raise SeedrError(
+            "SEEDR_TOKEN_INVALID",
+            401,
+            "The Seedr access token is missing or invalid. Reconnect your Seedr account.",
+        )
+    return f"Bearer {token}"
+
+
+def _validated_redirect_url(
+    current_url: str,
+    location: str,
+    allowed_hosts: frozenset[str],
+) -> str:
+    target = urljoin(current_url, location)
+    parsed = urlsplit(target)
+    hostname = (parsed.hostname or "").lower()
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise SeedrError(
+            "SEEDR_PROGRESS_REDIRECT_INVALID",
+            502,
+            "Seedr returned an invalid progress polling redirect.",
+        ) from exc
+
+    if (
+        parsed.scheme != "https"
+        or hostname not in allowed_hosts
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise SeedrError(
+            "SEEDR_PROGRESS_REDIRECT_INVALID",
+            502,
+            "Seedr returned an unsafe progress polling redirect.",
+        )
+    return target
+
+
 def seedr_data(value: Any) -> Any:
     if isinstance(value, dict) and "data" in value:
         return value["data"]
     return value
 
 
-def seedr_access_token() -> str:
-    """Access token used only by Seedr's legacy resource.php API."""
-    return normalize_seedr_token(current_seedr_token())
-
-
-async def legacy_seedr_request(
-    func: str,
-    method: str = "POST",
-    body: dict[str, Any] | None = None,
-) -> Any:
-    """Call Seedr's documented legacy resource API using form data."""
-    if not current_seedr_token():
-        raise HTTPException(503, "Seedr is not configured")
-
-    access_token = seedr_access_token()
-    if not access_token:
-        raise HTTPException(503, "Seedr access token is empty")
-
-    url = "https://www.seedr.cc/oauth_test/resource.php"
-    params = {
-        "access_token": access_token,
-        "func": str(func),
-    }
-    async with _InstrumentedAsyncClient(timeout=httpx.Timeout(35.0, connect=8.0), follow_redirects=True) as client:
-        response = await client.request(
-            method,
-            url,
-            params=params,
-            data=body or {},
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
-
-    raw = response.text
-    try:
-        data = response.json() if raw else None
-    except Exception:
-        data = raw
-
-    if response.status_code >= 400:
-        raise SeedrError(
-            *seedr_problem(response.status_code, data, raw)
-        )
-
-    if isinstance(data, dict):
-        raw_error = str(data.get("error") or "").strip().lower()
-        error_detail = str(
-            data.get("error_description") or data.get("message") or data.get("error") or ""
-        ).strip()
-        normalized_error = error_detail.lower().replace("_", " ")
-        if raw_error not in ("", "0"):
-            if (
-                "not enough space" in normalized_error
-                or "insufficient space" in normalized_error
-                or "not enough storage" in normalized_error
-                or "storage full" in normalized_error
-                or "not_enough_space" in raw_error
-                or "insufficient_space" in raw_error
-                or "not_enough_space" in normalized_error
-                or normalized_error.startswith("not enough space")
-                or normalized_error.startswith("insufficient space")
-            ):
-                raise SeedrError(
-                    "SEEDR_INSUFFICIENT_SPACE",
-                    413,
-                    "Seedr does not have enough free space for this torrent.",
-                )
-            if "access_denied" in raw_error or "access denied" in normalized_error:
-                raise SeedrError(
-                    "SEEDR_LIBRARY_ACCESS_DENIED",
-                    403,
-                    "Seedr denied this account operation.",
-                )
-            if "unauthor" in raw_error or "invalid token" in normalized_error:
-                raise SeedrError(
-                    "SEEDR_TOKEN_REJECTED",
-                    401,
-                    "Seedr rejected the API token.",
-                )
-            # Seedr's legacy API often reports operation failures inside a 200
-            # JSON response. Preserve the provider's error text instead of
-            # treating that as a successful task creation.
-            raise SeedrError(
-                "SEEDR_API_ERROR",
-                502,
-                error_detail or "Seedr rejected the torrent.",
-            )
-
-    return data
-
-
 async def legacy_seedr_list_contents(folder_id: str = "0") -> Any:
-    """List a Seedr folder using the legacy resource endpoint.
-    
-    The free account/token used by Torrent Studio can deny the modern root
-    filesystem endpoint while still permitting list_contents through Seedr's
-    legacy resource API.
-    """
-    if not current_seedr_token():
-        raise HTTPException(503, "Seedr is not configured")
-
-    access_token = seedr_access_token()
-    if not access_token:
-        raise HTTPException(503, "Seedr access token is empty")
-
-    url = "https://www.seedr.cc/oauth_test/resource.php"
-    params = {
-        "access_token": access_token,
-        "func": "list_contents",
-    }
-    form = {
-        "content_type": "folder",
-        "content_id": str(folder_id),
-    }
-    async with _InstrumentedAsyncClient(timeout=httpx.Timeout(35.0, connect=8.0), follow_redirects=True) as client:
-        response = await client.post(
-            url,
-            params=params,
-            data=form,
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
-
-    raw = response.text
-    try:
-        data = response.json() if raw else None
-    except Exception:
-        data = raw
-
-    if response.status_code >= 400:
-        raise HTTPException(
-            response.status_code,
-            seedr_error_message(response.status_code, data, raw),
-        )
-
-    if isinstance(data, dict) and str(data.get("error") or "").strip() not in ("", "0"):
-        raw_error = str(data.get("error") or "").strip().lower()
-        if "access_denied" in raw_error or "access denied" in raw_error:
-            raise SeedrError(
-                "SEEDR_LIBRARY_ACCESS_DENIED",
-                403,
-                "Seedr denied access to the account library. The token is recognized, but this library operation is not permitted.",
-            )
-        if "unauthor" in raw_error or "invalid token" in raw_error:
-            raise SeedrError(
-                "SEEDR_TOKEN_REJECTED",
-                401,
-                "Seedr rejected the API token. Generate a fresh Seedr API token and update SEEDR_API_TOKEN in Render.",
-            )
-        raise SeedrError(
-            "SEEDR_API_ERROR",
-            502,
-            f"Seedr legacy library request failed: {data.get('error')}",
-        )
-
-    return data
+    """Compatibility wrapper using the documented V2 folder-listing endpoints."""
+    identifier = str(folder_id or "0").strip()
+    path = (
+        "/fs/root/contents"
+        if identifier in {"", "0"}
+        else f"/fs/folder/{quote(identifier)}/contents"
+    )
+    return await seedr_request(path)
 
 
 async def seedr_root_request() -> Any:
-    """Fetch the Seedr account root using Seedr's dedicated root endpoint."""
-    if not current_seedr_token():
-        raise HTTPException(503, "Seedr is not configured")
-
-    url = "https://www.seedr.cc/api/folder"
-    headers = {"Accept": "application/json"}
-    params = {"access_token": seedr_access_token()}
-
-    async with _InstrumentedAsyncClient(timeout=httpx.Timeout(35.0, connect=8.0), follow_redirects=True) as client:
-        response = await client.get(url, headers=headers, params=params)
-
-    raw = response.text
-    try:
-        data = response.json() if raw else None
-    except Exception:
-        data = raw
-
-    if response.status_code >= 400:
-        detail = raw
-        if isinstance(data, dict):
-            detail = (
-                data.get("error_description")
-                or data.get("reason_phrase")
-                or data.get("message")
-                or data.get("error")
-                or raw
-            )
-        raise HTTPException(response.status_code, str(detail or "Seedr root request failed"))
-
-    return data
+    """Fetch the root contents using the documented V2 endpoint."""
+    return await seedr_request("/fs/root/contents")
 
 
 def seedr_problem(status_code: int, data: Any, raw: str) -> tuple[str, int, str]:
     reason = ""
+    error_code = ""
     if isinstance(data, dict):
+        error_code = str(data.get("error") or "").lower().replace("_", " ").strip()
         reason = str(
             data.get("reason_phrase")
             or data.get("error_description")
@@ -241,7 +112,16 @@ def seedr_problem(status_code: int, data: Any, raw: str) -> tuple[str, int, str]
         return (
             "SEEDR_TOKEN_REJECTED",
             401,
-            "Seedr rejected the API token. Generate a fresh Seedr API token and update SEEDR_API_TOKEN in Render.",
+            "Seedr rejected the token. Check that it is current and try connecting again.",
+        )
+
+    if status_code == 403 and (
+        "insufficient scope" in normalized or "insufficient scope" in error_code
+    ):
+        return (
+            "SEEDR_INSUFFICIENT_SCOPE",
+            403,
+            "Seedr recognized the token but denied this operation because it lacks the required scope.",
         )
 
     if status_code == 403 or normalized in {"access denied", "forbidden", "access_denied"}:
@@ -258,9 +138,16 @@ def seedr_problem(status_code: int, data: Any, raw: str) -> tuple[str, int, str]
             "Seedr reports insufficient storage space for this operation.",
         )
 
+    if status_code == 404:
+        return (
+            "SEEDR_ENDPOINT_NOT_FOUND",
+            404,
+            "Seedr did not find the requested API endpoint.",
+        )
+
     if status_code == 429:
         return (
-            "SEEDR_QUOTA_UNAVAILABLE",
+            "SEEDR_RATE_LIMITED",
             429,
             "Seedr rate limit reached. Please wait a moment and try again.",
         )
@@ -275,14 +162,21 @@ def seedr_problem(status_code: int, data: Any, raw: str) -> tuple[str, int, str]
     return (
         "SEEDR_API_ERROR",
         status_code,
-        reason or raw[:500] or f"Seedr API request failed (HTTP {status_code})",
+        reason or f"Seedr API request failed (HTTP {status_code})",
     )
 
 
 def seedr_error_message(status_code: int, data: Any, raw: str) -> str:
     return seedr_problem(status_code, data, raw)[2]
 
-async def seedr_request(path: str, method: str = "GET", body: Any = None, form: bool = False, base_url: str = SEEDR_BASE) -> Any:
+async def seedr_request(
+    path: str,
+    method: str = "GET",
+    body: Any = None,
+    form: bool = False,
+    base_url: str = SEEDR_BASE,
+    allowed_redirect_hosts: frozenset[str] | None = None,
+) -> Any:
     if not current_seedr_token():
         raise SeedrError(
             "SEEDR_TOKEN_MISSING",
@@ -296,6 +190,7 @@ async def seedr_request(path: str, method: str = "GET", body: Any = None, form: 
         selected_base_url = SEEDR_PAT_BASE
     url = f"{str(selected_base_url).rstrip("/")}/{request_path}"
     token = normalize_seedr_token(current_seedr_token())
+    authorization = seedr_authorization_header(token)
 
     kwargs: dict[str, Any] = {}
     if body is not None:
@@ -308,7 +203,10 @@ async def seedr_request(path: str, method: str = "GET", body: Any = None, form: 
     else:
         headers_base = {}
 
-    async with _InstrumentedAsyncClient(timeout=httpx.Timeout(35.0, connect=8.0), follow_redirects=True) as client:
+    async with _InstrumentedAsyncClient(
+        timeout=httpx.Timeout(35.0, connect=8.0),
+        follow_redirects=allowed_redirect_hosts is None,
+    ) as client:
         tried_tokens: list[str] = []
         # Never fall back from one browser session to another Seedr credential.
         candidates = [token]
@@ -323,42 +221,66 @@ async def seedr_request(path: str, method: str = "GET", body: Any = None, form: 
             tried_tokens.append(candidate)
 
             headers = {
-                "Authorization": f"Bearer {candidate}",
+                "Authorization": authorization,
                 "Accept": "application/json",
                 **headers_base,
             }
             request_started = time.monotonic()
             logger.info(
-                "Seedr API request start: session=%s mode=%s method=%s url=%s "
-                "token_present=%s token_length=%s token_fingerprint=%s body_keys=%s",
+                "Seedr API request start: session=%s mode=%s method=%s path=%s body_keys=%s",
                 _seedr_session_fingerprint(_seedr_request_session_id.get().strip()),
                 _seedr_session_auth_mode(_seedr_request_session_id.get().strip()),
                 method,
-                url,
-                bool(token),
-                len(token),
-                hashlib.sha256(token.encode("utf-8")).hexdigest()[:12] if token else "none",
+                urlsplit(url).path,
                 sorted(body.keys()) if isinstance(body, dict) else [],
             )
             try:
                 response = await client.request(method, url, headers=headers, **kwargs)
+                if allowed_redirect_hosts is not None:
+                    redirect_count = 0
+                    while response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location", "").strip()
+                        if not location or redirect_count >= 5:
+                            raise SeedrError(
+                                "SEEDR_PROGRESS_REDIRECT_INVALID",
+                                502,
+                                "Seedr returned an invalid progress polling redirect.",
+                            )
+                        url = _validated_redirect_url(
+                            url,
+                            location,
+                            allowed_redirect_hosts,
+                        )
+                        response = await client.request(
+                            "GET",
+                            url,
+                            headers=headers,
+                        )
+                        redirect_count += 1
+                    if 300 <= response.status_code < 400:
+                        raise SeedrError(
+                            "SEEDR_PROGRESS_REDIRECT_INVALID",
+                            502,
+                            "Seedr returned an invalid progress polling redirect.",
+                        )
+            except SeedrError:
+                raise
             except Exception as exc:
                 elapsed_ms = int((time.monotonic() - request_started) * 1000)
-                logger.exception(
-                    "Seedr API transport failure: session=%s mode=%s method=%s url=%s "
-                    "elapsed_ms=%s exception_type=%s exception=%s",
+                logger.error(
+                    "Seedr API transport failure: session=%s mode=%s method=%s path=%s "
+                    "elapsed_ms=%s exception_type=%s",
                     _seedr_session_fingerprint(_seedr_request_session_id.get().strip()),
                     _seedr_session_auth_mode(_seedr_request_session_id.get().strip()),
                     method,
-                    url,
+                    urlsplit(url).path,
                     elapsed_ms,
                     type(exc).__name__,
-                    str(exc)[:1000],
                 )
                 raise SeedrError(
                     "SEEDR_NETWORK_ERROR",
                     502,
-                    f"Seedr request could not be completed: {type(exc).__name__}: {str(exc)[:500]}",
+                    f"Seedr request could not be completed ({type(exc).__name__}).",
                 ) from exc
 
             elapsed_ms = int((time.monotonic() - request_started) * 1000)
@@ -380,7 +302,7 @@ async def seedr_request(path: str, method: str = "GET", body: Any = None, form: 
                 _seedr_session_fingerprint(_seedr_request_session_id.get().strip()),
                 _seedr_session_auth_mode(_seedr_request_session_id.get().strip()),
                 method,
-                request_path,
+                urlsplit(request_path).path,
                 response.status_code,
                 elapsed_ms,
                 len(raw.encode("utf-8", errors="ignore")),
@@ -401,26 +323,41 @@ async def seedr_request(path: str, method: str = "GET", body: Any = None, form: 
 
             last_status, last_data, last_raw = response.status_code, data, raw
             logger.warning(
-                "Seedr API request failed: session=%s mode=%s method=%s path=%s url=%s "
-                "status=%s elapsed_ms=%s token_length=%s token_fingerprint=%s "
-                "provider_request_id=%s response_json=%s response_body=%s",
+                "Seedr API request failed: session=%s mode=%s method=%s path=%s "
+                "status=%s elapsed_ms=%s provider_request_id=%s",
                 _seedr_session_fingerprint(_seedr_request_session_id.get().strip()),
                 _seedr_session_auth_mode(_seedr_request_session_id.get().strip()),
                 method,
-                request_path,
-                url,
+                urlsplit(request_path).path,
                 response.status_code,
                 elapsed_ms,
-                len(token),
-                hashlib.sha256(token.encode("utf-8")).hexdigest()[:12] if token else "none",
                 response_request_id[:200],
-                json.dumps(data, ensure_ascii=False, default=str)[:4000] if isinstance(data, (dict, list)) else "<not-json>",
-                raw[:4000] if raw else "<empty>",
             )
 
             break
 
     code, status_code, detail = seedr_problem(last_status, last_data, last_raw)
+    if code == "SEEDR_INSUFFICIENT_SCOPE" and method.upper() == "POST" and request_path == "tasks":
+        provider_reason = ""
+        if isinstance(last_data, dict):
+            provider_reason = str(
+                last_data.get("error_description")
+                or last_data.get("message")
+                or last_data.get("error")
+                or ""
+            ).lower()
+        detail = (
+            "Seedr denied task creation. Its API Console requires the tasks.write "
+            "scope for POST /tasks."
+        )
+        if "files.write" in provider_reason:
+            detail += (
+                " Seedr's response references files.write, which differs from the "
+                "documented requirement. Verify tasks.write with Seedr before "
+                "considering any additional scope."
+            )
+    if candidate:
+        detail = detail.replace(candidate, "[redacted]")
     raise SeedrError(code, status_code, detail)
 
 
@@ -528,6 +465,18 @@ def task_complete(task: dict[str, Any]) -> bool:
     # A numeric 100% is authoritative even when the state field is absent or
     # uses a provider-specific value.
     return progress >= 100
+
+def task_failed(task: dict[str, Any]) -> bool:
+    """Return True when Seedr reports a terminal failure state."""
+    if not isinstance(task, dict):
+        return False
+    state = str(
+        task.get("state")
+        or task.get("status")
+        or task.get("phase")
+        or ""
+    ).strip().lower().replace("-", "_")
+    return state in {"failed", "failure", "error", "cancelled", "canceled"}
 
 def seedr_task_name(task: dict[str, Any]) -> str:
     nested_torrent = task.get("torrent") if isinstance(task.get("torrent"), dict) else {}
