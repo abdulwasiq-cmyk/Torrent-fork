@@ -97,7 +97,7 @@ test('migrated Avengers movie card resolves cached Marvel results into an enable
   assert.ok(matches.length > 0);
   assert.ok(matches.every(record =>
     record.identityKind === 'infoHash' &&
-    Boolean(record.magnetUrl || record.downloadUrl || record.sourceUrl)
+    Boolean(record.magnetUrl || record.downloadUrl || record.sourceUrl || record.infoHash || record.infoUrl)
   ));
   const selectedSource = matches[0].magnetUrl || matches[0].downloadUrl || matches[0].sourceUrl;
   assert.ok(selectedSource);
@@ -172,11 +172,47 @@ test('cached matching preserves multiple sources and bypasses live size and seed
   assert.ok(groups[0].variants.every(result => Boolean(result.magnetUrl)));
 });
 
-test('cached records without a usable source do not enable Prepare', () => {
+test('cached infoHash-only records remain usable Prepare sources', () => {
   const document = {
     schemaVersion: 1,
     section: 'marvel',
     records: [makeTorrentRecord({ magnetUrl: '', downloadUrl: '', sourceUrl: '' })],
+  };
+  const matches = sectionCache.torrentCacheRecordsForMedia(document, cacheMedia);
+  const usable = filterResults(matches);
+
+  assert.equal(usable.length, 1);
+  assert.equal(usable[0].infoHash, 'a'.repeat(40));
+});
+
+test('cached infoUrl-only records remain usable Prepare sources', () => {
+  const document = {
+    schemaVersion: 1,
+    section: 'marvel',
+    records: [makeTorrentRecord({
+      infoHash: '',
+      magnetUrl: '',
+      downloadUrl: '',
+      sourceUrl: '',
+      infoUrl: 'https://indexer.example/torrent/123',
+    })],
+  };
+  const matches = sectionCache.torrentCacheRecordsForMedia(document, cacheMedia);
+
+  assert.equal(filterResults(matches).length, 1);
+});
+
+test('cached records without a usable source do not enable Prepare', () => {
+  const document = {
+    schemaVersion: 1,
+    section: 'marvel',
+    records: [makeTorrentRecord({
+      infoHash: '',
+      magnetUrl: '',
+      downloadUrl: '',
+      sourceUrl: '',
+      infoUrl: '',
+    })],
   };
   const matches = sectionCache.torrentCacheRecordsForMedia(document, cacheMedia);
 
