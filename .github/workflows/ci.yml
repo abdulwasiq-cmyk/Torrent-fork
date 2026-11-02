@@ -93,12 +93,12 @@ jobs:
           test -n "$VPS_SSH_KEY" || { echo "::error::VPS_SSH_KEY secret is empty"; exit 1; }
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           port="${VPS_SSH_PORT:-22}"
           if [ -n "${VPS_SSH_KNOWN_HOSTS:-}" ]; then
             # Pinned host key (secret VPS_SSH_KNOWN_HOSTS = the output of: ssh-keyscan -p PORT HOST on a trusted network).
-            printf '%s\\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
             echo "::warning::VPS_SSH_KNOWN_HOSTS is not set: trusting whatever host key the VPS presents. Add the secret to pin it."
             ssh-keyscan -p "$port" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
@@ -113,8 +113,8 @@ jobs:
           set -eu
           test -n "$VPS_USER" || { echo "::error::VPS_USER secret is empty"; exit 1; }
           port="${VPS_SSH_PORT:-22}"
-          ssh -i ~/.ssh/id_ed25519 -p "$port" \\
-            -o BatchMode=yes -o StrictHostKeyChecking=yes \\
+          ssh -i ~/.ssh/id_ed25519 -p "$port" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" 'bash -se' <<'REMOTE'
           set -euo pipefail
           APP_DIR="$HOME/Torrent-Studio"
