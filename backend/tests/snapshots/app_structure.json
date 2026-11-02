@@ -397,6 +397,13 @@
     [
      "GET"
     ],
+    "/api/torrent-cache/ready",
+    "api_torrent_cache_ready"
+   ],
+   [
+    [
+     "GET"
+    ],
     "/api/sections/{section}/torrents",
     "api_get_torrent_cache"
    ],
@@ -763,6 +770,7 @@
    "_initialize_catalogue_caches",
    "_start_catalogue_synopsis_enrichment",
    "_start_tmdb_catalogue_synopsis_enrichment",
+   "initialize_torrent_cache",
    "_warm_extra_catalogues_on_startup",
    "_start_regional_movie_catalogue_scheduler",
    "_warm_marvel_catalogue_on_startup"
@@ -1162,6 +1170,13 @@
     [
      "GET"
     ],
+    "/api/torrent-cache/ready",
+    "api_torrent_cache_ready"
+   ],
+   [
+    [
+     "GET"
+    ],
     "/api/sections/{section}/torrents",
     "api_get_torrent_cache"
    ],
@@ -1542,6 +1557,7 @@
    "_initialize_catalogue_caches",
    "_start_catalogue_synopsis_enrichment",
    "_start_tmdb_catalogue_synopsis_enrichment",
+   "initialize_torrent_cache",
    "_warm_extra_catalogues_on_startup",
    "_start_regional_movie_catalogue_scheduler",
    "_warm_marvel_catalogue_on_startup"
