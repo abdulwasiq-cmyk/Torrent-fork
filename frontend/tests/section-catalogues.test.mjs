@@ -30,6 +30,10 @@ const franchisePanelSource = await readFile(
   resolve(frontendRoot, 'src/components/torrent-search/useTorrentSearchPanel.tsx'),
   'utf8',
 );
+const resultsSectionSource = await readFile(
+  resolve(frontendRoot, 'src/components/torrent-search/sections/SearchResultsSection.tsx'),
+  'utf8',
+);
 const searchApiBundle = await build({
   entryPoints: [resolve(frontendRoot, 'src/api/search.ts')],
   bundle: true,
@@ -56,6 +60,11 @@ test('cached franchise searches join torrent rows before building result cards',
     franchisePanelSource,
     /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*page,\s*pageSize,\s*torrentDocument,\s*\)/,
   );
+  assert.match(franchisePanelSource, /setFranchiseMovieCardsByMode\(previous =>/);
+  assert.match(franchisePanelSource, /cataloguePage\.cards\.forEach\(card => byKey\.set\(card\.key, card\)\)/);
+  assert.match(resultsSectionSource, /franchiseMovieCardsForPage\(sortedSectionMovieCards, franchiseGridPage, franchiseGridPageSize\)/);
+  assert.match(resultsSectionSource, /const isSectionBackedMovieView = activeFranchiseSearchMode &&[\s\S]*!showMarvelWebSeries &&[\s\S]*!showDcWebSeries/);
+  assert.match(resultsSectionSource, /const sectionMovieCards = isSectionBackedMovieView/);
 });
 
 test('franchise movie summary shows the catalogue total and labels loaded torrent options', async () => {
@@ -65,7 +74,7 @@ test('franchise movie summary shows the catalogue total and labels loaded torren
   ]);
   assert.match(panelSource, /const pageRows = cataloguePage\.results/);
   assert.match(panelSource, /const totalTitles = cataloguePage\.totalResults/);
-  assert.match(resultsSource, /catalogueExpectedTitles\.toLocaleString\(\).*catalogue titles.*sortedResults\.length.*torrent options loaded/);
+  assert.match(resultsSource, /catalogueExpectedTitles\.toLocaleString\(\).*catalogue titles.*sectionMovieCards\.length\.toLocaleString\(\).*loaded catalogue titles.*loadedSectionTorrentOptions.*cached torrent options loaded/);
 });
 
 test('franchise movie catalogues load section records through the card-rendering pipeline', async t => {
@@ -106,28 +115,28 @@ test('franchise movie catalogues load section records through the card-rendering
       assert.equal(moviePage.totalResults, catalogue.records);
       assert.equal(moviePage.results.length, 18);
 
-      const rows = sectionCache.franchiseRowsFromSection(
+      const torrentDocument = JSON.parse(await readFile(
+        resolve(repositoryRoot, 'backend/cache-seed', `${catalogue.section}-torrents.json`),
+        'utf8',
+      ));
+      const movieCardPage = sectionCache.franchiseMoviePageFromSection(
         loaded.document,
         catalogue.subsection,
+        1,
+        18,
+        torrentDocument,
       );
-      assert.ok(rows);
-      assert.equal(rows.length, catalogue.records);
-      const firstPageRows = rows.slice(0, subsection.pageSize);
-      assert.equal(firstPageRows.length, 18);
-      assert.ok(firstPageRows.every(row => row.sectionCacheRecord));
-
-      const displayableRows = grouping.filterTorrentSearchResults(firstPageRows, {
-        minSizeBytes: 1,
-        maxSizeBytes: 1_000_000_000,
-        resolutionFilter: null,
-      });
-      assert.equal(displayableRows.length, 18);
-      const uiGroups = grouping.groupTorrentResults(displayableRows);
-      assert.equal(uiGroups.length, 18);
+      assert.ok(movieCardPage);
+      const uiCards = sectionCache.franchiseMovieCardsForPage(movieCardPage.cards, 1, 18);
+      assert.equal(uiCards.length, 18);
       assert.deepEqual(
-        uiGroups.map(group => group.variants[0].title),
-        firstPageRows.map(row => row.title),
+        uiCards.map(card => card.title),
+        subsection.results.slice(0, 18).map(row => row.title),
       );
+      assert.ok(uiCards.every(card => card.variants.every(variant =>
+        variant.mediaTitle === card.title &&
+        String(variant.tmdbId) === String(card.catalogue.tmdbId)
+      )));
       assert.equal(
         grouping.filterTorrentSearchResults(
           [{ title: 'Unseeded torrent', size: 0, seeders: 0, leechers: 0 }],

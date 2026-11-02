@@ -200,7 +200,7 @@ test('franchise metadata rows without a cached torrent remain source-less', () =
   assert.equal(rows[0].infoHash, undefined);
 });
 
-test('franchise movie pages paginate distinct catalogue rows before expanding torrent variants', async t => {
+test('section-backed movie cards preserve catalogue rows independently of torrent variants', async t => {
   const views = [
     { mode: 'marvel', section: 'marvel', subsection: 'movies' },
     { mode: 'dc-live-action', section: 'dc', subsection: 'live-action' },
@@ -214,6 +214,7 @@ test('franchise movie pages paginate distinct catalogue rows before expanding to
     year: 2020,
   }));
   const torrentRecords = movieRows.flatMap((movie, movieIndex) => (
+    movieIndex === 17 ? [] :
     Array.from({ length: movieIndex === 0 ? 3 : 1 }, (_, variantIndex) => {
       const infoHash = String(movieIndex * 3 + variantIndex + 1).padStart(40, '0');
       return {
@@ -270,28 +271,64 @@ test('franchise movie pages paginate distinct catalogue rows before expanding to
         18,
         torrentDocument,
       );
-      const groups1 = grouping.groupTorrentResults(page1.results);
-      const groups2 = grouping.groupTorrentResults(page2.results);
-      const titles1 = groups1.map(group => group.variants[0].mediaTitle);
-      const titles2 = groups2.map(group => group.variants[0].mediaTitle);
+      const titles1 = page1.cards.map(card => card.title);
+      const titles2 = page2.cards.map(card => card.title);
 
       assert.equal(page1.totalResults, 37, 'the page carries the full catalogue count');
       assert.equal(page2.totalResults, 37);
       assert.equal(page3.totalResults, 37);
-      assert.equal(groups1.length, 18, 'page 1 contains 18 distinct catalogue movies');
-      assert.equal(groups2.length, 18, 'page 2 contains the next 18 distinct catalogue movies');
-      assert.equal(page3.results.length, 1, 'the final page contains the one remaining movie');
+      assert.equal(page1.cards.length, 18, 'page 1 contains 18 distinct catalogue movies');
+      assert.equal(page2.cards.length, 18, 'page 2 contains the next 18 distinct catalogue movies');
+      assert.equal(page3.cards.length, 1, 'the final page contains the one remaining movie');
       assert.deepEqual(titles1, movieRows.slice(0, 18).map(movie => movie.title));
       assert.deepEqual(titles2, movieRows.slice(18, 36).map(movie => movie.title));
       assert.equal(new Set([...titles1, ...titles2]).size, 36, 'no catalogue title repeats across pages');
-      assert.equal(groups1[0].variants.length, 3, 'all cached variants remain grouped with their movie');
+      assert.equal(page1.cards[0].variants.length, 3, 'all cached variants remain attached to their movie');
+      assert.equal(page1.cards[17].variants.length, 0, 'a movie without cached torrents remains a catalogue card');
+      assert.equal(page1.cards[17].title, movieRows[17].title);
       assert.equal(
-        groups1.flatMap(group => group.variants).length,
-        20,
-        'the page keeps every cached torrent option for its 18 movies',
+        page1.cards.reduce((total, card) => total + card.variants.length, 0),
+        19,
+        'torrent option totals are independent of the 18 rendered catalogue cards',
       );
+      assert.ok([...page1.cards, ...page2.cards, ...page3.cards].every(card =>
+        card.variants.every(variant =>
+          variant.mediaTitle === card.title &&
+          String(variant.tmdbId) === String(card.catalogue.tmdbId)
+        )
+      ), 'every torrent variant remains attached to its matching catalogue row');
     });
   }
+});
+
+test('live-sized Marvel section renders two 18-title pages from 96 rows and 3,544 torrent records', async () => {
+  const metadata = JSON.parse(await readFile(
+    new URL('../../backend/cache-seed/marvel.json', import.meta.url),
+    'utf8',
+  ));
+  const torrentCache = JSON.parse(await readFile(
+    new URL('../../backend/cache-seed/marvel-torrents.json', import.meta.url),
+    'utf8',
+  ));
+  const subsection = metadata.subsections.movies;
+  const page1 = sectionCache.franchiseMoviePageFromSection(metadata, 'movies', 1, 18, torrentCache);
+  const page2 = sectionCache.franchiseMoviePageFromSection(metadata, 'movies', 2, 18, torrentCache);
+  const titles1 = page1.cards.map(card => card.title);
+  const titles2 = page2.cards.map(card => card.title);
+
+  assert.equal(subsection.results.length, 96);
+  assert.equal(torrentCache.records.length, 3544);
+  assert.equal(page1.cards.length, 18);
+  assert.equal(page2.cards.length, 18);
+  assert.deepEqual(titles1, subsection.results.slice(0, 18).map(row => row.title));
+  assert.deepEqual(titles2, subsection.results.slice(18, 36).map(row => row.title));
+  assert.equal(new Set([...titles1, ...titles2]).size, 36);
+  assert.ok([...page1.cards, ...page2.cards].every(card =>
+    card.variants.every(variant =>
+      variant.mediaTitle === card.title &&
+      String(variant.tmdbId) === String(card.catalogue.tmdbId)
+    )
+  ));
 });
 
 test('franchise movie pagination does not alter Marvel, DC, Favourites or Anime TV section pages', async t => {

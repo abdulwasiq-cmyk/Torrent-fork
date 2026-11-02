@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { MovieCataloguePage } from '../../../api/client.ts';
+import type { FranchiseMovieCard } from '../../../api/sectionCache.ts';
 import { CachedFranchiseSearchMode } from '../persistentCaches.ts';
 import { ActiveTopSection, CachedFranchiseKey, ClassicsContentTab, FranchiseTmdbKey, MainCatalogueMenu, MarvelFilmFilter, RegionalCatalogueGroup, RegionalCatalogueMode, RegionalContentTab, RegionalTvGroup, RegionalTvMode } from '../types.ts';
 import { useOttAvailability } from '../useOttAvailability.ts';
@@ -31,6 +32,7 @@ export function useCatalogueNavigationState() {
   const franchisePageRequestRef = useRef<AbortController | null>(null);
   const franchisePageGenerationRef = useRef(0);
   const franchiseLoadedPagesRef = useRef(new Map<CachedFranchiseSearchMode, Set<number>>());
+  const [franchiseMovieCardsByMode, setFranchiseMovieCardsByMode] = useState<Partial<Record<CachedFranchiseSearchMode, FranchiseMovieCard[]>>>({});
   const [franchiseGridPage, setFranchiseGridPage] = useState(1);
   // Hold explicit Prepare clicks until the visible catalogue posters settle.
   const prepareBuildPendingRef = useRef(false);
@@ -107,6 +109,8 @@ export function useCatalogueNavigationState() {
     franchisePageRequestRef,
     franchisePageGenerationRef,
     franchiseLoadedPagesRef,
+    franchiseMovieCardsByMode,
+    setFranchiseMovieCardsByMode,
     franchiseGridPage,
     setFranchiseGridPage,
     prepareBuildPendingRef,

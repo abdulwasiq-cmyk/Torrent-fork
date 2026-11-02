@@ -326,7 +326,28 @@ export function franchiseRowsFromSection(
 ): TorrentSearchResult[] | null {
   const subsection = document.subsections[subsectionName];
   if (!subsection || subsection.mediaType !== 'movie') return null;
-  return franchiseRowsForMovies(subsection.results, torrentDocument);
+  return franchiseMovieCardsForMovies(subsection.results, torrentDocument)
+    .flatMap(card => card.variants.length ? card.variants : [card.posterResult]);
+}
+
+export interface FranchiseMovieCard {
+  key: string;
+  title: string;
+  year: string;
+  catalogue: SectionCacheRow;
+  posterResult: TorrentSearchResult;
+  variants: TorrentSearchResult[];
+}
+
+export function franchiseMovieCardsForPage(
+  cards: FranchiseMovieCard[],
+  page: number,
+  pageSize: number,
+): FranchiseMovieCard[] {
+  const safePageSize = Math.max(1, Math.floor(Number(pageSize) || SECTION_PAGE_SIZE));
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const start = (safePage - 1) * safePageSize;
+  return cards.slice(start, start + safePageSize);
 }
 
 export function franchiseMoviePageFromSection(
@@ -335,7 +356,7 @@ export function franchiseMoviePageFromSection(
   page: number,
   pageSize: number,
   torrentDocument?: TorrentCacheDocument,
-): { results: TorrentSearchResult[]; totalResults: number } | null {
+): { cards: FranchiseMovieCard[]; results: TorrentSearchResult[]; totalResults: number } | null {
   const subsection = document.subsections[subsectionName];
   if (!subsection || subsection.mediaType !== 'movie') return null;
   const totalResults = Number(subsection.totalResults) || subsection.results.length;
@@ -343,17 +364,19 @@ export function franchiseMoviePageFromSection(
   const safePage = Math.max(1, Math.floor(Number(page) || 1));
   const start = (safePage - 1) * safePageSize;
   const movieRows = subsection.results.slice(start, start + safePageSize);
+  const cards = franchiseMovieCardsForMovies(movieRows, torrentDocument);
   return {
-    results: franchiseRowsForMovies(movieRows, torrentDocument),
+    cards,
+    results: cards.flatMap(card => card.variants.length ? card.variants : [card.posterResult]),
     totalResults,
   };
 }
 
-function franchiseRowsForMovies(
+function franchiseMovieCardsForMovies(
   movies: SectionCacheRow[],
   torrentDocument?: TorrentCacheDocument,
-): TorrentSearchResult[] {
-  return movies.flatMap(row => {
+): FranchiseMovieCard[] {
+  return movies.map(row => {
     const tmdbId = sectionRowTmdbId(row);
     const catalogueRecord: TorrentSearchResult = {
       sectionCacheRecord: true,
@@ -379,19 +402,17 @@ function franchiseRowsForMovies(
       streamingProviders: row.streamingProviders,
       providerLink: row.providerLink || undefined,
     };
-    if (!torrentDocument) return [catalogueRecord];
-
-    const cachedTorrents = torrentCacheRecordsForMedia(torrentDocument, {
-      id: catalogueRecord.id,
-      tmdbId: catalogueRecord.tmdbId,
-      imdbId: catalogueRecord.imdbId,
-      title: catalogueRecord.title,
-      year: catalogueRecord.year,
-      mediaType: 'movie',
-    });
-    if (cachedTorrents.length === 0) return [catalogueRecord];
-
-    return cachedTorrents.map(torrent => ({
+    const cachedTorrents = torrentDocument
+      ? torrentCacheRecordsForMedia(torrentDocument, {
+        id: catalogueRecord.id,
+        tmdbId: catalogueRecord.tmdbId,
+        imdbId: catalogueRecord.imdbId,
+        title: catalogueRecord.title,
+        year: catalogueRecord.year,
+        mediaType: 'movie',
+      })
+      : [];
+    const variants = cachedTorrents.map(torrent => ({
       ...catalogueRecord,
       ...torrent,
       mediaTitle: catalogueRecord.mediaTitle,
@@ -410,5 +431,15 @@ function franchiseRowsForMovies(
       streamingProviders: catalogueRecord.streamingProviders || torrent.streamingProviders,
       providerLink: catalogueRecord.providerLink || torrent.providerLink,
     }));
+    const year = String(row.year ?? '');
+    const identity = tmdbId ?? row.id ?? row.imdbId ?? normalizedTitle(row.title);
+    return {
+      key: `${identity}|${year || 'unknown'}`,
+      title: row.title,
+      year,
+      catalogue: row,
+      posterResult: catalogueRecord,
+      variants,
+    };
   });
 }

@@ -2,7 +2,7 @@ import { api } from '../../../api/client.ts';
 import { formatBytes } from '../../../utils/formatters.ts';
 import { TvShowCard } from '../TvShowCard.tsx';
 import { MovieCompactCard, MoviePrepareCard, imdbTitleLink } from '../../MovieCards.tsx';
-import { compareReleaseDateDescending, episodeSeriesTitle, releaseDateSortValue, imdbRatingKey, normalizeGroupTitle, normalizeSavedOttTitle, searchMetadataForGroup, torrentQualityDetails, torrentResultKey } from '../grouping.ts';
+import { compareReleaseDateDescending, episodeSeriesTitle, releaseDateSortValue, imdbRatingKey, normalizeGroupTitle, normalizeSavedOttTitle, searchMetadataForGroup, torrentMediaIdentity, torrentQualityDetails, torrentResultKey } from '../grouping.ts';
 import { toCardProviders, uniqueOttProviders } from '../ottProviders.ts';
 import { normalizeTorrentTitleForNexStream } from '../nexstream.ts';
 import { lowQualityPosterUrl, posterImageUrlForResult, posterKeyFor } from '../posterUrls.ts';
@@ -10,14 +10,55 @@ import { extractedQuality } from '../helpers.ts';
 import { classicsComparator, ratingValue } from '../classicsSort.ts';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
 import { isAnimeCatalogue } from '../yenime.ts';
-import { tvCataloguePageFromSectionCache } from '../../../api/sectionCache.ts';
+import { franchiseCatalogueSection, franchiseMovieCardsForPage, tvCataloguePageFromSectionCache } from '../../../api/sectionCache.ts';
 
 export function SearchResultsSection({ vm }: { vm: PanelModel }) {
   const isRegionalTvView = ['hollywood', 'bollywood', 'korean', 'pakistani', 'anime'].includes(vm.activeTopSection || '')
     && vm.regionalContentTabs[vm.activeTopSection as keyof typeof vm.regionalContentTabs] === 'web-series';
   if (isRegionalTvView) return null;
 
-  const { activeFranchiseSearchMode, activeTopSection, catalogueExpectedTitles, classicsContentTab, classicsSort, dcWebSeriesCatalogue, dcWebSeriesError, dcWebSeriesLoading, error, expandedSearchGroupKey, franchiseGridPage, franchiseGridPageSize, groupedResults, imdbRatingsByKey, isSearching, loadDcWebSeriesPage, marvelWebSeriesCatalogue, marvelWebSeriesError, marvelWebSeriesLoading, metadataPosterFailed, movieCatalogue, movieTorrentPreviewGroup, nexStreamLoading, nexStreamLoadingTitle, nexStreamResolvingId, nexStreamResults, onPlaySeedrFile, openYenimeRequest, pendingPosterAction, playCatalogueTvWithNexStream, playWithNexStream, playingTorrentKey, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, prepareMovieTorrent, prepareStateFor, preparedActionsFor, preparedForResult, preparingTorrentKey, regionalWebSeriesCatalogue, regionalWebSeriesError, regionalWebSeriesLoading, renderFranchisePagination, results, searchAvailabilityByGroup, searchMetadata, searchMetadataStatus, searchNexStreamTitles, searchPosterUrlsRef, selectedMovieTorrentQualityByGroup, selectedQualityByGroup, setExpandedSearchGroupKey, setMarvelWebSeriesCatalogue, setMarvelWebSeriesError, setMarvelWebSeriesLoading, setMetadataPosterFailed, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setPlayingTorrentKey, setRegionalWebSeriesCatalogue, setRegionalWebSeriesError, setRegionalWebSeriesLoading, setSelectedMovieTorrentQualityByGroup, setSelectedQualityByGroup, showDcWebSeries, showMarvelWebSeries, sortedResults, startPosterBackgroundWorkers } = vm;
+  const { activeFranchiseSearchMode, activeTopSection, catalogueExpectedTitles, classicsContentTab, classicsSort, dcWebSeriesCatalogue, dcWebSeriesError, dcWebSeriesLoading, error, expandedSearchGroupKey, franchiseGridPage, franchiseGridPageSize, franchiseMovieCardsByMode, groupedResults, imdbRatingsByKey, isSearching, loadDcWebSeriesPage, marvelWebSeriesCatalogue, marvelWebSeriesError, marvelWebSeriesLoading, metadataPosterFailed, movieCatalogue, movieTorrentPreviewGroup, nexStreamLoading, nexStreamLoadingTitle, nexStreamResolvingId, nexStreamResults, onPlaySeedrFile, openYenimeRequest, pendingPosterAction, playCatalogueTvWithNexStream, playWithNexStream, playingTorrentKey, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterFirstPageReadyRef, posterLoadedRef, posterOverrides, prepareMovieTorrent, prepareStateFor, preparedActionsFor, preparedForResult, preparingTorrentKey, regionalWebSeriesCatalogue, regionalWebSeriesError, regionalWebSeriesLoading, renderFranchisePagination, results, searchAvailabilityByGroup, searchMetadata, searchMetadataStatus, searchNexStreamTitles, searchPosterUrlsRef, selectedMovieTorrentQualityByGroup, selectedQualityByGroup, setExpandedSearchGroupKey, setMarvelWebSeriesCatalogue, setMarvelWebSeriesError, setMarvelWebSeriesLoading, setMetadataPosterFailed, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewGroup, setMovieTorrentSearchError, setNexStreamError, setPendingPosterAction, setPlayingTorrentKey, setRegionalWebSeriesCatalogue, setRegionalWebSeriesError, setRegionalWebSeriesLoading, setSelectedMovieTorrentQualityByGroup, setSelectedQualityByGroup, showDcWebSeries, showMarvelWebSeries, sortedResults, startPosterBackgroundWorkers } = vm;
+  const isSectionBackedMovieView = activeFranchiseSearchMode &&
+    franchiseCatalogueSection(activeFranchiseSearchMode) &&
+    !showMarvelWebSeries &&
+    !showDcWebSeries &&
+    !(activeTopSection === 'classics' && classicsContentTab !== 'movies');
+  const sectionMovieCards = isSectionBackedMovieView
+    ? franchiseMovieCardsByMode[activeFranchiseSearchMode] || []
+    : null;
+  const visibleGroupIdentifiers = new Set(groupedResults.flatMap(group => group.variants.flatMap(variant => (
+    [variant.tmdbId, variant.id, variant.imdbId]
+      .filter((value): value is string | number => value != null && String(value).trim() !== '')
+      .map(value => String(value).toLowerCase())
+  ))));
+  const visibleGroupKeys = new Set(groupedResults.map(group => group.key));
+  const sortedSectionMovieCards = sectionMovieCards === null ? null : sectionMovieCards
+    .filter(card => {
+      const identifiers = [card.catalogue.tmdbId, card.catalogue.id, card.catalogue.imdbId]
+        .filter((value): value is string | number => value != null && String(value).trim() !== '')
+        .map(value => String(value).toLowerCase());
+      const identity = torrentMediaIdentity(card.posterResult);
+      return identifiers.some(identifier => visibleGroupIdentifiers.has(identifier)) ||
+        (!identifiers.length && visibleGroupKeys.has(
+          `${identity.normalized}|${identity.year || 'unknown'}`
+        ));
+    })
+    .sort(classicsComparator(
+      classicsSort,
+      card => releaseDateSortValue(card.posterResult),
+      card => {
+        const identity = torrentMediaIdentity(card.posterResult);
+        return ratingValue(imdbRatingsByKey[imdbRatingKey(identity.title, identity.year, 'movie')]);
+      },
+      card => torrentMediaIdentity(card.posterResult).normalized,
+    ));
+  const visibleMovieCards = sortedSectionMovieCards === null
+    ? groupedResults.slice((franchiseGridPage - 1) * franchiseGridPageSize, franchiseGridPage * franchiseGridPageSize)
+    : franchiseMovieCardsForPage(sortedSectionMovieCards, franchiseGridPage, franchiseGridPageSize);
+  const loadedSectionTorrentOptions = sectionMovieCards?.reduce(
+    (total, card) => total + card.variants.length,
+    0,
+  );
   const renderDcWebSeriesPagination = () => {
     if (!dcWebSeriesCatalogue || dcWebSeriesCatalogue.totalPages <= 1) return null;
     const page = dcWebSeriesCatalogue.page;
@@ -38,7 +79,9 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
 
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="text-xs text-slate-400">
-              {activeFranchiseSearchMode && catalogueExpectedTitles > 0
+              {sectionMovieCards && catalogueExpectedTitles > 0
+                ? `${catalogueExpectedTitles.toLocaleString()} catalogue titles · ${sectionMovieCards.length.toLocaleString()} loaded catalogue titles · ${(loadedSectionTorrentOptions || 0).toLocaleString()} cached torrent options loaded`
+                : activeFranchiseSearchMode && catalogueExpectedTitles > 0
                 ? `${catalogueExpectedTitles.toLocaleString()} catalogue titles · ${sortedResults.length} torrent options loaded`
                 : `${groupedResults.length} titles · ${sortedResults.length} torrent options`}
             </div>
@@ -210,9 +253,9 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
           <div
             className="grid grid-cols-2 items-stretch gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 lg:rounded-2xl lg:border-0 lg:bg-transparent lg:gap-4 lg:w-full lg:max-w-none lg:mx-0 lg:p-0 lg:divide-y-0 lg:overflow-visible"
           >
-            {groupedResults.slice((franchiseGridPage - 1) * franchiseGridPageSize, franchiseGridPage * franchiseGridPageSize).map((group, index) => {
+            {visibleMovieCards.map((group, index) => {
               const selectedKey = selectedQualityByGroup[group.key];
-              const result = group.variants.find(variant => torrentResultKey(variant) === selectedKey) || group.variants[0];
+              const result = group.variants.find(variant => torrentResultKey(variant) === selectedKey) || group.variants[0] || group.posterResult;
               const posterResult = group.posterResult;
               const normalizedCardTitle = normalizeTorrentTitleForNexStream(group.title);
               const cardYear = Number((group.title.match(/\\b((?:19|20)\\d{2})\\b/) || [])[1] || group.year || 0);
@@ -259,11 +302,13 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                 posterOverrides[groupPosterKey] ||
                 posterResult?.posterUrl ||
                 posterImageUrlForResult(posterResult);
+              const groupIdentity = torrentMediaIdentity(posterResult);
+              const groupAvailabilityKey = `${groupIdentity.normalized}|${groupIdentity.year || 'unknown'}`;
 
               // Normal searches use a poster-first two-state card. Clicking the poster
               // opens the Prepare/details card; clicking it again returns here.
               if (expandedSearchGroupKey !== group.key) {
-                const availability = searchAvailabilityByGroup[group.key];
+                const availability = searchAvailabilityByGroup[group.key] || searchAvailabilityByGroup[groupAvailabilityKey];
                 const providerMatchTitle = episodeSeriesTitle(group.title) || group.title;
                 const groupTitleKey = normalizeSavedOttTitle(providerMatchTitle);
                 const matchingSavedTitles = (availability?.matches || []).filter(match =>
@@ -360,7 +405,9 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                   posterSrc={loadedSearchPosterUrl || lowQualityPosterUrl(sharedPosterUrl)}
                   posterAlt={group.title}
                   providers={toCardProviders(uniqueOttProviders(
-                    (searchAvailabilityByGroup[group.key]?.matches || [])
+                    (searchAvailabilityByGroup[group.key]?.matches ||
+                      searchAvailabilityByGroup[groupAvailabilityKey]?.matches ||
+                      [])
                       .filter(match => Array.isArray(match.providers) && match.providers.length > 0 &&
                         normalizeSavedOttTitle(String(match.title || '')) === normalizeSavedOttTitle(episodeSeriesTitle(group.title) || group.title))
                       .flatMap(match => match.providers)
