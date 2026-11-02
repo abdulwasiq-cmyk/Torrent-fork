@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { api, MovieCatalogueKey, TorrentSearchResult } from '../../api/client.ts';
+import { api, MovieCatalogueKey, TorrentCacheDocument, TorrentSearchResult } from '../../api/client.ts';
 import { movieCataloguePageFromSection, movieCatalogueSection, tvCataloguePageFromSectionCache } from '../../api/sectionCache.ts';
 import { setHighQualityPostersReady } from '../MovieCards.tsx';
 import { imdbRatingKey, torrentResultKey } from './grouping.ts';
@@ -547,7 +547,20 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
         const { location: sectionLocation, document } = sectionCache;
         if (isStale()) return;
         const subsection = document.subsections[sectionLocation.subsection];
-        const allResults = franchiseRowsFromSection(document, sectionLocation.subsection);
+        let torrentDocument: TorrentCacheDocument | undefined;
+        try {
+          torrentDocument = await api.getTorrentSectionCache(sectionLocation.section);
+        } catch (torrentCacheError) {
+          console.warn('[PREPARE_TRACE] section torrent cache unavailable', {
+            section: sectionLocation.section,
+            error: String(torrentCacheError),
+          });
+        }
+        const allResults = franchiseRowsFromSection(
+          document,
+          sectionLocation.subsection,
+          torrentDocument,
+        );
         if (!subsection || !allResults) {
           throw new Error('The requested subsection is missing from its section cache.');
         }

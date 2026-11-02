@@ -152,6 +152,44 @@ test('movie pagination still slices section rows in order', () => {
   assert.equal(page.results[0].sectionCacheRecord, true);
 });
 
+test('franchise movie rows use matching cached torrent results when available', async () => {
+  const metadata = JSON.parse(await readFile(
+    new URL('../../backend/cache-seed/marvel.json', import.meta.url),
+    'utf8',
+  ));
+  const torrentCache = JSON.parse(await readFile(
+    new URL('../../backend/cache-seed/marvel-torrents.json', import.meta.url),
+    'utf8',
+  ));
+  const rows = sectionCache.franchiseRowsFromSection(metadata, 'movies', torrentCache);
+  const spiderMan = rows.filter(row => String(row.tmdbId) === '969681');
+
+  assert.ok(spiderMan.length > 0);
+  assert.ok(spiderMan.every(row =>
+    row.sectionCacheRecord === true &&
+    Boolean(row.magnetUrl || row.downloadUrl || row.sourceUrl || row.infoHash || row.infoUrl)
+  ));
+  assert.ok(spiderMan.every(row => row.mediaTitle === 'Spider-Man: Brand New Day'));
+});
+
+test('franchise metadata rows without a cached torrent remain source-less', () => {
+  const metadata = {
+    subsections: {
+      movies: {
+        mediaType: 'movie',
+        results: [{ id: 7, title: 'No Torrent Movie', year: 2020 }],
+      },
+    },
+  };
+  const torrentCache = { schemaVersion: 1, section: 'marvel', records: [] };
+  const rows = sectionCache.franchiseRowsFromSection(metadata, 'movies', torrentCache);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, 'No Torrent Movie');
+  assert.equal(rows[0].magnetUrl, undefined);
+  assert.equal(rows[0].infoHash, undefined);
+});
+
 test('Hollywood and Bollywood TV catalogue mappings retain all three subsections', () => {
   const expected = {
     'hollywood-popular': ['hollywood', 'tv-popular'],

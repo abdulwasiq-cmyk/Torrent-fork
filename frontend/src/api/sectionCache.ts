@@ -5,6 +5,7 @@ import type {
   SectionCacheDocument,
   SectionCacheRow,
   TorrentSearchResult,
+  TorrentCacheDocument,
   TvCatalogueItem,
   TvCataloguePage,
 } from './types.ts';
@@ -321,12 +322,13 @@ export async function franchiseSectionDocumentFromCache(
 export function franchiseRowsFromSection(
   document: SectionCacheDocument,
   subsectionName: string,
+  torrentDocument?: TorrentCacheDocument,
 ): TorrentSearchResult[] | null {
   const subsection = document.subsections[subsectionName];
   if (!subsection || subsection.mediaType !== 'movie') return null;
-  return subsection.results.map(row => {
+  return subsection.results.flatMap(row => {
     const tmdbId = sectionRowTmdbId(row);
-    return {
+    const catalogueRecord: TorrentSearchResult = {
       sectionCacheRecord: true,
       title: row.title,
       mediaTitle: row.title,
@@ -350,5 +352,36 @@ export function franchiseRowsFromSection(
       streamingProviders: row.streamingProviders,
       providerLink: row.providerLink || undefined,
     };
+    if (!torrentDocument) return [catalogueRecord];
+
+    const cachedTorrents = torrentCacheRecordsForMedia(torrentDocument, {
+      id: catalogueRecord.id,
+      tmdbId: catalogueRecord.tmdbId,
+      imdbId: catalogueRecord.imdbId,
+      title: catalogueRecord.title,
+      year: catalogueRecord.year,
+      mediaType: 'movie',
+    });
+    if (cachedTorrents.length === 0) return [catalogueRecord];
+
+    return cachedTorrents.map(torrent => ({
+      ...catalogueRecord,
+      ...torrent,
+      mediaTitle: catalogueRecord.mediaTitle,
+      posterUrl: torrent.posterUrl || catalogueRecord.posterUrl,
+      overview: torrent.overview || catalogueRecord.overview,
+      rating: torrent.rating ?? catalogueRecord.rating,
+      tmdbId: catalogueRecord.tmdbId ?? torrent.tmdbId,
+      id: catalogueRecord.id ?? torrent.id,
+      imdbId: catalogueRecord.imdbId || torrent.imdbId,
+      imdbRating: catalogueRecord.imdbRating ?? torrent.imdbRating,
+      imdbRatingStatus: catalogueRecord.imdbRatingStatus || torrent.imdbRatingStatus,
+      imdbVotes: catalogueRecord.imdbVotes ?? torrent.imdbVotes,
+      imdbUrl: catalogueRecord.imdbUrl || torrent.imdbUrl,
+      imdbCheckedAt: catalogueRecord.imdbCheckedAt ?? torrent.imdbCheckedAt,
+      ottAvailability: catalogueRecord.ottAvailability || torrent.ottAvailability,
+      streamingProviders: catalogueRecord.streamingProviders || torrent.streamingProviders,
+      providerLink: catalogueRecord.providerLink || torrent.providerLink,
+    }));
   });
 }
