@@ -59,36 +59,58 @@ const catalogues = [
   { mode: 'classics', section: 'favourites', subsection: 'movies', records: 75 },
 ];
 
-test('cached franchise searches join torrent rows before building result cards', () => {
-  assert.match(searchRunnerSource, /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*1,\s*Math\.max\(1,\s*subsection\.results\.length\),\s*torrentDocument,\s*\)/);
+test('franchise browsing loads only metadata and renders catalogue rows directly', () => {
+  assert.match(searchRunnerSource, /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*1,\s*Math\.max\(1,\s*subsection\.results\.length\),\s*\)/);
   assert.match(searchRunnerSource, /setFranchiseMovieCardsByMode\(previous => \(\{\s*\.\.\.previous,\s*\[searchMode\]: cataloguePage\.cards/);
-  assert.match(searchRunnerSource, /data = cataloguePage\.results/);
-  assert.match(searchRunnerSource, /const totalPages = Math\.max\(1, Math\.ceil\(totalResults \/ pageSize\)\)/);
+  assert.match(searchRunnerSource, /data = \[\]/);
+  assert.match(searchRunnerSource, /searchMode\s*\?\s*Promise\.resolve\(\[\]\)\s*:\s*Promise\.allSettled/);
+  assert.match(searchRunnerSource, /if \(!searchMode\)\s*\{\s*void cachedSearchPromise/);
+  assert.doesNotMatch(searchRunnerSource, /getTorrent(?:Section|Movie)Cache/);
+  assert.doesNotMatch(franchisePanelSource, /getTorrent(?:Section|Movie)Cache/);
+  assert.doesNotMatch(searchRunnerSource + franchisePanelSource, /readFranchisePageCache/);
   assert.match(searchRunnerSource, /new Set\(Array\.from\(\{ length: totalPages \}, \(_, index\) => index \+ 1\)\)/);
-  assert.match(resultsSectionSource, /if \(!card\.variants\.length\) return true/);
-  assert.match(franchisePanelSource, /api\.getTorrentSectionCache\(sectionLocation\.section\)/);
-  assert.match(
-    franchisePanelSource,
-    /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*page,\s*pageSize,\s*torrentDocument,\s*\)/,
-  );
   assert.match(franchisePanelSource, /setFranchiseMovieCardsByMode\(previous =>/);
   assert.match(franchisePanelSource, /cataloguePage\.cards\.forEach\(card => byKey\.set\(card\.key, card\)\)/);
+  assert.match(resultsSectionSource, /visibleSectionMovieCards\.map\(\(movie, index\)/);
+  assert.match(resultsSectionSource, /searchMovieTorrents\(movie\)/);
   assert.match(resultsSectionSource, /franchiseMovieCardsForPage\(sortedSectionMovieCards, franchiseGridPage, franchiseGridPageSize\)/);
   assert.match(resultsSectionSource, /const isSectionBackedMovieView = activeFranchiseSearchMode &&[\s\S]*!showMarvelWebSeries &&[\s\S]*!showDcWebSeries/);
   assert.match(resultsSectionSource, /const sectionMovieCards = isSectionBackedMovieView/);
 });
 
-test('franchise movie summary shows the catalogue total and labels loaded torrent options', async () => {
-  const [panelSource, resultsSource] = await Promise.all([
-    readFile(resolve(frontendRoot, 'src/components/torrent-search/useTorrentSearchPanel.tsx'), 'utf8'),
-    readFile(resolve(frontendRoot, 'src/components/torrent-search/sections/SearchResultsSection.tsx'), 'utf8'),
-  ]);
-  assert.match(panelSource, /const pageRows = cataloguePage\.results/);
-  assert.match(panelSource, /const totalTitles = cataloguePage\.totalResults/);
-  assert.match(resultsSource, /catalogueExpectedTitles\.toLocaleString\(\).*catalogue titles.*sectionMovieCards\.length\.toLocaleString\(\).*loaded catalogue titles.*loadedSectionTorrentOptions.*cached torrent options loaded/);
+test('franchise summary distinguishes catalogue titles and deferred torrent options', () => {
+  assert.match(resultsSectionSource, /catalogue titles.*match current filters.*on this page.*cached torrent options load when a title is prepared/);
 });
 
-test('franchise movie catalogues load section records through the card-rendering pipeline', async t => {
+test('startup and catalogue navigation do not read torrent caches or issue torrent requests', async () => {
+  const sectionCacheSource = await readFile(
+    resolve(frontendRoot, 'src/api/sectionCache.ts'),
+    'utf8',
+  );
+  const cacheHookSource = await readFile(
+    resolve(frontendRoot, 'src/components/torrent-search/state/useMovieTorrentCache.ts'),
+    'utf8',
+  );
+  const pageLoaderStart = franchisePanelSource.indexOf('async function loadCachedFranchisePage');
+  const pageLoaderEnd = franchisePanelSource.indexOf('function navigateFranchisePage', pageLoaderStart);
+  const pageLoader = franchisePanelSource.slice(pageLoaderStart, pageLoaderEnd);
+  const sectionBranchStart = franchisePanelSource.indexOf('const section = movieCatalogueSection(key);');
+  const sectionBranchEnd = franchisePanelSource.indexOf('// Regional catalogues', sectionBranchStart);
+  const sectionBranch = franchisePanelSource.slice(sectionBranchStart, sectionBranchEnd);
+
+  assert.ok(pageLoaderStart >= 0 && pageLoaderEnd > pageLoaderStart);
+  assert.match(pageLoader, /api\.getSectionCache/);
+  assert.doesNotMatch(pageLoader, /getTorrent|searchTorrents|torrent-options/);
+  assert.ok(sectionBranchStart >= 0 && sectionBranchEnd > sectionBranchStart);
+  assert.match(sectionBranch, /api\.getSectionCache\(section\.section\)/);
+  assert.doesNotMatch(sectionBranch, /getMovieCatalogue|torrent-options|torrents/);
+  assert.doesNotMatch(sectionCacheSource, /mediaIdentities|infoHash|magnetUrl|torrentCacheRecordsForMedia/);
+  assert.doesNotMatch(cacheHookSource, /useEffect|localStorage\.getItem/);
+  assert.match(searchRunnerSource, /searchMode\s*\?\s*Promise\.resolve\(\[\]\)\s*:\s*Promise\.allSettled/);
+  assert.doesNotMatch(franchisePanelSource, /getTorrent(?:Section|Movie)Cache/);
+});
+
+test('franchise movie pages retain metadata rows across all affected sections', async t => {
   const documents = new Map();
   for (const section of new Set(catalogues.map(catalogue => catalogue.section))) {
     const path = resolve(repositoryRoot, 'backend/cache-seed', `${section}.json`);
@@ -116,51 +138,48 @@ test('franchise movie catalogues load section records through the card-rendering
       assert.equal(subsection.mediaType, 'movie');
       assert.equal(subsection.results.length, catalogue.records);
 
-      const moviePage = sectionCache.movieCataloguePageFromSection(
-        loaded.document,
-        catalogue.mode,
-        catalogue.subsection,
-        1,
-      );
-      assert.ok(moviePage);
-      assert.equal(moviePage.totalResults, catalogue.records);
-      assert.equal(moviePage.results.length, 18);
-
-      const torrentDocument = JSON.parse(await readFile(
-        resolve(repositoryRoot, 'backend/cache-seed', `${catalogue.section}-torrents.json`),
-        'utf8',
-      ));
-      const movieCardPage = sectionCache.franchiseMoviePageFromSection(
+      const moviePage = sectionCache.franchiseMoviePageFromSection(
         loaded.document,
         catalogue.subsection,
         1,
         18,
-        torrentDocument,
       );
-      assert.ok(movieCardPage);
-      const uiCards = sectionCache.franchiseMovieCardsForPage(movieCardPage.cards, 1, 18);
-      assert.equal(uiCards.length, 18);
-      assert.deepEqual(
-        uiCards.map(card => card.title),
-        subsection.results.slice(0, 18).map(row => row.title),
-      );
-      assert.ok(uiCards.every(card => card.variants.every(variant =>
-        variant.mediaTitle === card.title &&
-        String(variant.tmdbId) === String(card.catalogue.tmdbId)
-      )));
-      const allCardsPage = sectionCache.franchiseMoviePageFromSection(
+      assert.ok(moviePage);
+      assert.equal(moviePage.totalResults, catalogue.records);
+      assert.equal(moviePage.cards.length, 18);
+      const page2 = sectionCache.franchiseMoviePageFromSection(
         loaded.document,
         catalogue.subsection,
-        1,
-        subsection.results.length,
-        torrentDocument,
+        2,
+        18,
       );
-      assert.ok(allCardsPage);
-      const sortedCards = allCardsPage.cards.slice().sort(classicsSort.classicsComparator(
+      assert.ok(page2);
+      assert.equal(page2.cards.length, 18);
+      assert.deepEqual(
+        moviePage.cards.map(card => card.title),
+        subsection.results.slice(0, 18).map(row => row.title),
+      );
+      assert.deepEqual(
+        page2.cards.map(card => card.title),
+        subsection.results.slice(18, 36).map(row => row.title),
+      );
+      assert.equal(
+        new Set([...moviePage.cards, ...page2.cards].map(card => card.key)).size,
+        moviePage.cards.length + page2.cards.length,
+      );
+      assert.ok(moviePage.cards.every(card =>
+        card.tmdbId || card.id || card.imdbId || card.title
+      ));
+      assert.ok(moviePage.cards.every(card => !Object.hasOwn(card, 'variants')));
+      const sortedCards = subsection.results.map((row, index) => ({
+        ...row,
+        key: String(row.tmdbId ?? row.id ?? row.title) + '|' + String(row.year || 'unknown'),
+        sourceIndex: index,
+      })).sort(classicsSort.classicsComparator(
         classicsSort.DEFAULT_CLASSICS_SORT,
-        card => grouping.releaseDateSortValue(card.posterResult),
-        card => classicsSort.ratingValue(card.posterResult),
-        card => grouping.torrentMediaIdentity(card.posterResult).normalized,
+        card => grouping.releaseDateSortValue(card),
+        card => classicsSort.ratingValue(card),
+        card => card.title,
       ));
       const sortedPageOne = sectionCache.franchiseMovieCardsForPage(sortedCards, 1, 18);
       const sortedPageTwo = sectionCache.franchiseMovieCardsForPage(sortedCards, 2, 18);
@@ -178,16 +197,36 @@ test('franchise movie catalogues load section records through the card-rendering
         false,
         'catalogue pages must not repeat a title/year pair',
       );
-      assert.equal(
-        grouping.filterTorrentSearchResults(
-          [{ title: 'Unseeded torrent', size: 0, seeders: 0, leechers: 0 }],
-          { minSizeBytes: 1, maxSizeBytes: 1_000_000_000, resolutionFilter: null },
-        ).length,
-        0,
-        'torrent eligibility filters must remain active for ordinary search results',
-      );
     });
   }
+});
+
+test('96 Marvel movies stay metadata-only beside the 3,544-record torrent cache', async () => {
+  const metadata = JSON.parse(await readFile(
+    resolve(repositoryRoot, 'backend/cache-seed/marvel.json'),
+    'utf8',
+  ));
+  const torrentCache = JSON.parse(await readFile(
+    resolve(repositoryRoot, 'backend/cache-seed/marvel-torrents.json'),
+    'utf8',
+  ));
+  const movies = metadata.subsections.movies;
+  const page1 = sectionCache.franchiseMoviePageFromSection(metadata, 'movies', 1, 18);
+  const page2 = sectionCache.franchiseMoviePageFromSection(metadata, 'movies', 2, 18);
+
+  assert.equal(movies.results.length, 96);
+  assert.equal(torrentCache.records.length, 3544);
+  assert.deepEqual([page1.cards.length, page2.cards.length], [18, 18]);
+  assert.deepEqual(
+    [...page1.cards, ...page2.cards].map(card => card.title),
+    movies.results.slice(0, 36).map(row => row.title),
+  );
+  assert.ok([...page1.cards, ...page2.cards].every(card =>
+    !Object.hasOwn(card, 'variants') &&
+    !Object.hasOwn(card, 'magnetUrl') &&
+    !Object.hasOwn(card, 'infoHash')
+  ));
+  assert.match(searchRunnerSource, /searchMode\s*\?\s*Promise\.resolve\(\[\]\)\s*:\s*Promise\.allSettled/);
 });
 
 test('Yenime MAL lookup sends TMDB ID for offline mapping lookup', async t => {

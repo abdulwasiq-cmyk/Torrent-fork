@@ -1,5 +1,5 @@
 import { API_BASE, api, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
-import { torrentCacheRecordsForMedia, torrentCacheSectionForMovieCatalogue } from '../../../api/sectionCache.ts';
+import { movieCatalogueTorrentLookupEnabled, torrentCacheSectionForMovieCatalogue } from '../../../api/sectionCache.ts';
 import searchLimits from '../../../../search_limits.json';
 import { TorrentQualityGroup, filterUsableTorrentResults, groupTorrentResults, normalizeGroupTitle, torrentGroupReleaseYear, torrentResultKey } from '../grouping.ts';
 import { cataloguePosterSource } from '../cataloguePosters.ts';
@@ -13,7 +13,7 @@ import { usePosterWorkers } from './usePosterWorkers.ts';
 import { readLocalCache } from '../localCache.ts';
 import { useMovieTorrentCache } from './useMovieTorrentCache.ts';
 
-export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef, setExpandedSearchGroupKey, movieTorrentSearchControllerRef, movieTorrentSearchGenerationRef, setMovieTorrentSearchTitle, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewPosterUrl, cataloguePosterUrlsRef, setMovieTorrentSearchLoading, setMovieTorrentSearchError, setMovieTorrentPreviewGroup, setMovieTorrentPickerGroups, setSelectedMovieTorrentQualityByGroup, movieTorrentDetailsCacheRef, prepareBuildPendingRef, movieCatalogue, setSearched, error, setResults, setQuery, setSelectedQualityByGroup, startPosterBackgroundSearch, persistMovieTorrentCache }: Pick<ReturnType<typeof useMoviePreviewState>, 'prepareClickIntentRef' | 'prepareTraceIdRef' | 'setExpandedSearchGroupKey' | 'movieTorrentSearchControllerRef' | 'movieTorrentSearchGenerationRef' | 'setMovieTorrentSearchTitle' | 'setMovieTorrentPreviewCatalogueId' | 'setMovieTorrentPreviewPosterUrl' | 'cataloguePosterUrlsRef' | 'setMovieTorrentSearchLoading' | 'setMovieTorrentSearchError' | 'setMovieTorrentPreviewGroup' | 'setMovieTorrentPickerGroups' | 'setSelectedMovieTorrentQualityByGroup' | 'movieTorrentDetailsCacheRef'> & Pick<ReturnType<typeof useCatalogueNavigationState>, 'prepareBuildPendingRef' | 'movieCatalogue' | 'setSearched' | 'error'> & Pick<ReturnType<typeof useSearchInputState>, 'setResults' | 'setQuery'> & Pick<ReturnType<typeof useSearchMetadataState>, 'setSelectedQualityByGroup'> & Pick<ReturnType<typeof usePosterWorkers>, 'startPosterBackgroundSearch'> & Pick<ReturnType<typeof useMovieTorrentCache>, 'persistMovieTorrentCache'>) {
+export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef, setExpandedSearchGroupKey, movieTorrentSearchControllerRef, movieTorrentSearchGenerationRef, setMovieTorrentSearchTitle, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewPosterUrl, cataloguePosterUrlsRef, setMovieTorrentSearchLoading, setMovieTorrentSearchError, setMovieTorrentPreviewGroup, setMovieTorrentPickerGroups, setSelectedMovieTorrentQualityByGroup, movieTorrentDetailsCacheRef, prepareBuildPendingRef, movieCatalogue, activeFranchiseSearchMode, setSearched, error, setResults, setQuery, setSelectedQualityByGroup, startPosterBackgroundSearch, persistMovieTorrentCache }: Pick<ReturnType<typeof useMoviePreviewState>, 'prepareClickIntentRef' | 'prepareTraceIdRef' | 'setExpandedSearchGroupKey' | 'movieTorrentSearchControllerRef' | 'movieTorrentSearchGenerationRef' | 'setMovieTorrentSearchTitle' | 'setMovieTorrentPreviewCatalogueId' | 'setMovieTorrentPreviewPosterUrl' | 'cataloguePosterUrlsRef' | 'setMovieTorrentSearchLoading' | 'setMovieTorrentSearchError' | 'setMovieTorrentPreviewGroup' | 'setMovieTorrentPickerGroups' | 'setSelectedMovieTorrentQualityByGroup' | 'movieTorrentDetailsCacheRef'> & Pick<ReturnType<typeof useCatalogueNavigationState>, 'prepareBuildPendingRef' | 'movieCatalogue' | 'activeFranchiseSearchMode' | 'setSearched' | 'error'> & Pick<ReturnType<typeof useSearchInputState>, 'setResults' | 'setQuery'> & Pick<ReturnType<typeof useSearchMetadataState>, 'setSelectedQualityByGroup'> & Pick<ReturnType<typeof usePosterWorkers>, 'startPosterBackgroundSearch'> & Pick<ReturnType<typeof useMovieTorrentCache>, 'persistMovieTorrentCache'>) {
   const searchMovieTorrents = async (movie: MovieCatalogueItem) => {
     // Torrent lookup and Prepare state are user-initiated only. Background cache/metadata
     // work must never be able to open a Prepare card.
@@ -28,7 +28,8 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
       return;
     }
     const traceId = prepareTraceIdRef.current;
-    const previewIdentity = catalogueMovieIdentity(movie, movieCatalogue?.catalogue);
+    const catalogueKey = movieCatalogue?.catalogue || activeFranchiseSearchMode || undefined;
+    const previewIdentity = catalogueMovieIdentity(movie, catalogueKey);
     prepareBuildPendingRef.current = true;
     prepareClickIntentRef.current = false;
 
@@ -73,8 +74,23 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
     setSelectedQualityByGroup({});
     prepareBuildPendingRef.current = false;
 
-    const torrentSection = torrentCacheSectionForMovieCatalogue(movieCatalogue?.catalogue);
-    const cacheKey = (torrentSection || 'legacy') + '|' + normalizeGroupTitle(movie.title) + '|' + String(movie.year || '');
+    const torrentLookupEnabled = movieCatalogueTorrentLookupEnabled(catalogueKey);
+    const torrentSection = torrentLookupEnabled
+      ? torrentCacheSectionForMovieCatalogue(catalogueKey)
+      : null;
+    if (!torrentLookupEnabled) {
+      if (!openNexStreamOnlyCard()) {
+        setMovieTorrentSearchError('Torrent options are not enabled for this catalogue.');
+      }
+      setMovieTorrentSearchLoading(false);
+      return;
+    }
+    const movieCacheIdentity = movie.tmdbId
+      ? 'tmdb:' + String(movie.tmdbId).toLowerCase()
+      : movie.imdbId
+        ? 'imdb:' + movie.imdbId.toLowerCase()
+        : 'title-year:' + normalizeGroupTitle(movie.title) + '|' + String(movie.year || '');
+    const cacheKey = (torrentSection || 'legacy') + '|' + movieCacheIdentity;
     const cachedDetails = movieTorrentDetailsCacheRef.current.get(cacheKey);
     const persistedDetails = cachedDetails || readLocalCache<{ groups: TorrentQualityGroup[]; savedAt: number }>(MOVIE_TORRENT_CACHE_STORAGE_KEY, cacheKey);
     if (persistedDetails && Date.now() - persistedDetails.savedAt < MOVIE_TORRENT_CACHE_TTL_MS) {
@@ -115,7 +131,7 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
         setSelectedMovieTorrentQualityByGroup({ [selectedGroup.key]: torrentResultKey(selectedGroup.variants[0]) });
         setMovieTorrentPreviewGroup(selectedGroup);
         setMovieTorrentPreviewCatalogueId(previewIdentity);
-        if (!/^(popular|trending|latest)-(bollywood|hollywood)$/.test(String(movieCatalogue?.catalogue || ''))) {
+        if (!/^(popular|trending|latest)-(bollywood|hollywood)$/.test(String(catalogueKey || ''))) {
           startPosterBackgroundSearch(selectedGroup.variants);
         }
       } else if (!openNexStreamOnlyCard()) {
@@ -128,21 +144,19 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
     try {
       let data: TorrentSearchResult[] | null = null;
       if (torrentSection) {
-        try {
-          const cachedDocument = await api.getTorrentSectionCache(torrentSection);
-          const cachedRecords = torrentCacheRecordsForMedia(cachedDocument, movie);
-          if (cachedRecords.length > 0) data = cachedRecords;
-        } catch (cacheError) {
-          console.warn('[PREPARE_TRACE] section torrent cache unavailable', {
-            section: torrentSection,
-            error: String(cacheError),
-          });
-        }
+        const tmdbIdCandidate = String(movie.tmdbId ?? movie.id ?? '').trim();
+        const cachedDocument = await api.getTorrentMovieCache(torrentSection, {
+          tmdbId: /^\d+$/.test(tmdbIdCandidate) ? tmdbIdCandidate : undefined,
+          imdbId: movie.imdbId,
+          title: movie.title,
+          year: movie.year,
+        }, controller.signal);
+        if (cachedDocument.records.length > 0) data = cachedDocument.records;
       }
-      const embeddedMatches = [
+      const embeddedMatches = torrentLookupEnabled ? [
         ...(Array.isArray(movie.torrentMatches) ? movie.torrentMatches : []),
         ...(movie.torrentMatch ? [movie.torrentMatch] : []),
-      ];
+      ] : [];
       if (!data) data = embeddedMatches
         .filter(match => Boolean(match && (match.magnetUrl || match.infoHash || match.infoUrl)))
         .map((match, index): TorrentSearchResult => ({
@@ -165,7 +179,11 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
 
       // The old regional endpoint is a cache-only compatibility fallback for
       // regional sections; it is never used for empty non-regional sections.
-      if (!data && (!torrentSection || ['hollywood', 'bollywood'].includes(torrentSection))) {
+      if (
+        torrentLookupEnabled &&
+        !data &&
+        (!torrentSection || ['hollywood', 'bollywood'].includes(torrentSection))
+      ) {
         try {
           const params = new URLSearchParams({ title: movie.title, year: String(movie.year || '') });
           console.info('[PREPARE_TRACE]', JSON.stringify({
@@ -257,7 +275,7 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
 
       if (groups.length === 0) {
         if (openNexStreamOnlyCard()) return;
-        if (movieCatalogue?.catalogue === 'popular-bollywood') {
+        if (        catalogueKey === 'popular-bollywood') {
           setMovieTorrentSearchError('Coming soon on OTT — this title is not available to prepare right now. Check back later for a streaming release.');
         } else {
           setMovieTorrentSearchError('No usable torrent releases were found for ' + titleQuery + '. Try again later or use a shorter title.');
@@ -266,7 +284,7 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
       }
 
       // Regional catalogue posters are authoritative; avoid separate torrent-title poster lookups.
-      const isRegionalMovieCatalogue = /^(popular|trending|latest)-(bollywood|hollywood)$/.test(String(movieCatalogue?.catalogue || ''));
+      const isRegionalMovieCatalogue = /^(popular|trending|latest)-(bollywood|hollywood)$/.test(String(catalogueKey || ''));
       if (!isRegionalMovieCatalogue) {
         startPosterBackgroundSearch(groups.flatMap(group => group.variants));
       }

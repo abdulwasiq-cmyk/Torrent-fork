@@ -2,50 +2,82 @@ import type { TorrentCacheDocument, TorrentSearchResult, MarvelCatalogueResponse
 import { API_BASE, apiFetch } from './http.ts';
 
 const sectionCacheRequests = new Map<string, Promise<SectionCacheDocument>>();
-const torrentSectionCacheRequests = new Map<string, Promise<TorrentCacheDocument>>();
+const torrentMovieCacheRequests = new Map<string, Promise<TorrentCacheDocument>>();
+
+function isTorrentSearchResult(value: unknown): value is TorrentSearchResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.title === 'string' &&
+    typeof record.size === 'number' &&
+    typeof record.seeders === 'number' &&
+    typeof record.leechers === 'number'
+  );
+}
 
 export const searchApi = {
-  async getTorrentSectionCache(section: string): Promise<TorrentCacheDocument> {
-    const key = String(section || '').trim().toLowerCase();
-    const existing = torrentSectionCacheRequests.get(key);
+  async getTorrentMovieCache(
+    section: string,
+    media: { tmdbId?: number | string | null; imdbId?: string | null; title: string; year?: number | string | null },
+    signal?: AbortSignal,
+  ): Promise<TorrentCacheDocument> {
+    const sectionKey = String(section || '').trim().toLowerCase();
+    const params = new URLSearchParams();
+    const tmdbId = media.tmdbId == null ? '' : String(media.tmdbId).trim();
+    const imdbId = String(media.imdbId || '').trim();
+    const title = String(media.title || '').trim();
+    const year = media.year == null ? '' : String(media.year).trim();
+    if (tmdbId) params.set('tmdb_id', tmdbId);
+    if (imdbId) params.set('imdb_id', imdbId);
+    if (title) params.set('title', title);
+    if (year) params.set('year', year);
+    if (!tmdbId && !imdbId && !(title && year)) {
+      throw new Error('A stable movie identifier or title and year are required for cached torrent lookup.');
+    }
+    const key = [sectionKey, params.toString()].join('|');
+    const existing = torrentMovieCacheRequests.get(key);
     if (existing) return existing;
     const request = (async () => {
       const res = await apiFetch(
-        '/api/sections/' + encodeURIComponent(key) + '/torrents',
-        { cache: 'no-store' },
+        '/api/sections/' + encodeURIComponent(sectionKey) + '/torrent-options?' + params.toString(),
+        { cache: 'no-store', signal },
       );
       const body = await res.text();
       let data: unknown;
       try {
         data = body ? JSON.parse(body) : null;
       } catch {
-        throw new Error('Torrent section cache response is not valid JSON.');
+        throw new Error('Movie torrent cache response is not valid JSON.');
       }
       const record = data && typeof data === 'object' && !Array.isArray(data)
         ? data as Record<string, unknown>
         : null;
       if (!res.ok) {
         const detail = typeof record?.detail === 'string' ? record.detail : '';
-        throw new Error(detail || body || ('Torrent section cache failed (HTTP ' + res.status + ')'));
+        throw new Error(detail || body || ('Movie torrent cache failed (HTTP ' + res.status + ')'));
       }
       if (
         !record ||
         record.schemaVersion !== 1 ||
-        record.section !== key ||
-        !Array.isArray(record.records)
+        record.section !== sectionKey ||
+        !Array.isArray(record.records) ||
+        !record.records.every(isTorrentSearchResult)
       ) {
-        throw new Error('Torrent section cache response has an invalid document shape.');
+        throw new Error('Movie torrent cache response has an invalid document shape.');
       }
-      return record as unknown as TorrentCacheDocument;
+      return {
+        schemaVersion: 1,
+        section: sectionKey,
+        records: record.records,
+      };
     })();
-    torrentSectionCacheRequests.set(key, request);
+    torrentMovieCacheRequests.set(key, request);
     try {
       return await request;
-    } catch (error) {
-      if (torrentSectionCacheRequests.get(key) === request) {
-        torrentSectionCacheRequests.delete(key);
+    } finally {
+      if (torrentMovieCacheRequests.get(key) === request) {
+        torrentMovieCacheRequests.delete(key);
       }
-      throw error;
     }
   },
 

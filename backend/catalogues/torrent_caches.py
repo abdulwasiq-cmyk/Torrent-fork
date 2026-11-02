@@ -11,12 +11,13 @@ import re
 import shutil
 import tempfile
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 from core.settings import TORRENT_CACHE_DIR, TORRENT_CACHE_SEED_DIR
 from core.torrent_size import filter_torrent_records
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 router = APIRouter()
 logger = logging.getLogger("torrent-studio")
@@ -37,6 +38,7 @@ SEED_MANIFEST_NAME = "torrent-cache-manifest.json"
 RUNTIME_MANIFEST_NAME = "manifest.json"
 _INFO_HASH_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_MOVIE_TITLE_SEPARATORS = re.compile(r"[\W_]+", re.UNICODE)
 _LOCK = threading.RLock()
 
 
@@ -152,6 +154,9 @@ class TorrentCacheStore:
         self._manifest: dict[str, Any] | None = None
         self._lock = _LOCK
         self._validated_signatures: dict[tuple[int, str], tuple[int, int, int]] = {}
+        self._movie_record_indexes: dict[
+            tuple[int, str], dict[str, tuple[dict[str, Any], ...]]
+        ] = {}
         self._ready = False
 
     @property
@@ -359,6 +364,75 @@ class TorrentCacheStore:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
                 lock_handle.close()
 
+    @staticmethod
+    def _normalized_movie_title(title: str) -> str:
+        decomposed = unicodedata.normalize("NFKD", title).casefold()
+        unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
+        return " ".join(_MOVIE_TITLE_SEPARATORS.sub(" ", unaccented.replace("&", " and ")).split())
+
+    def movie_records(
+        self,
+        section: str,
+        *,
+        tmdb_id: str | None,
+        imdb_id: str | None,
+        title: str | None,
+        year: int | None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        if section not in TORRENT_CACHE_NAMES:
+            raise KeyError(section)
+        with self._lock:
+            generation = self.initialize()["generation"]
+            index_key = (generation, section)
+            index = self._movie_record_indexes.get(index_key)
+            if index is None:
+                document, loaded_generation = self.load_section(section)
+                if loaded_generation != generation:
+                    raise TorrentCacheError("Torrent cache generation changed during movie lookup")
+                mutable_index: dict[str, list[dict[str, Any]]] = {}
+                for record in document["records"]:
+                    for identity in record.get("mediaIdentities", []):
+                        if not isinstance(identity, dict) or identity.get("mediaType") != "movie":
+                            continue
+                        keys = []
+                        if identity.get("tmdbId") is not None:
+                            keys.append(f"tmdb:{str(identity['tmdbId']).casefold()}")
+                        if identity.get("imdbId"):
+                            keys.append(f"imdb:{str(identity['imdbId']).casefold()}")
+                        identity_title = self._normalized_movie_title(str(identity.get("title") or ""))
+                        identity_year = str(identity.get("year") or "")[:4]
+                        if identity_title and identity_year:
+                            keys.append(f"title-year:{identity_title}|{identity_year}")
+                        for key in keys:
+                            mutable_index.setdefault(key, []).append(record)
+                index = {
+                    key: tuple(records)
+                    for key, records in mutable_index.items()
+                }
+                self._movie_record_indexes = {
+                    key: value
+                    for key, value in self._movie_record_indexes.items()
+                    if key[0] == generation
+                }
+                self._movie_record_indexes[index_key] = index
+
+            stable_matches: dict[str, dict[str, Any]] = {}
+            for kind, identifier in (("tmdb", tmdb_id), ("imdb", imdb_id)):
+                if identifier:
+                    for record in index.get(f"{kind}:{identifier.casefold()}", ()):
+                        stable_matches[str(record["identity"])] = record
+                    if stable_matches:
+                        break
+
+            selected = stable_matches
+            if not selected and title and year is not None:
+                title_key = self._normalized_movie_title(title)
+                selected = {
+                    str(record["identity"]): record
+                    for record in index.get(f"title-year:{title_key}|{year}", ())
+                }
+            return list(selected.values()), generation
+
     def install_bundle(self, staged_dir: Path, bundle_manifest: dict[str, Any]) -> str:
         staged_dir = Path(staged_dir)
         incoming = _validate_manifest(bundle_manifest, "torrent bundle manifest")
@@ -435,3 +509,37 @@ async def api_get_torrent_cache(section: str, response: Response) -> dict[str, A
         ) from exc
     response.headers["X-Torrent-Cache-Generation"] = str(generation)
     return document
+
+
+@router.get("/api/sections/{section}/torrent-options")
+async def api_get_movie_torrent_options(
+    section: str,
+    response: Response,
+    tmdb_id: str | None = Query(None, min_length=1, max_length=64, pattern=r"^\d+$"),
+    imdb_id: str | None = Query(None, min_length=1, max_length=32),
+    title: str | None = Query(None, min_length=1, max_length=256),
+    year: int | None = Query(None, ge=1800, le=3000),
+) -> dict[str, Any]:
+    if section not in TORRENT_CACHE_NAMES:
+        raise HTTPException(status_code=404, detail="Torrent cache not found")
+    if not tmdb_id and not imdb_id and not (title and year is not None):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide a TMDB ID, IMDb ID, or both a movie title and year",
+        )
+    try:
+        records, generation = store.movie_records(
+            section,
+            tmdb_id=tmdb_id.strip() if tmdb_id else None,
+            imdb_id=imdb_id.strip() if imdb_id else None,
+            title=title,
+            year=year,
+        )
+    except TorrentCacheError as exc:
+        logger.error("Movie torrent cache unavailable: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Torrent cache is unavailable or failed integrity validation",
+        ) from exc
+    response.headers["X-Torrent-Cache-Generation"] = str(generation)
+    return {"schemaVersion": 1, "section": section, "records": records}

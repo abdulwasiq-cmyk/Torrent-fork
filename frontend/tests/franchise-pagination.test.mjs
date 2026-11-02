@@ -43,8 +43,8 @@ test('Marvel Movies, DC Movies, DC Animated and Favourites Movies share top and 
     readFile(resolve(frontendRoot, 'src/components/torrent-search/useTorrentSearchPanel.tsx'), 'utf8'),
     loadTypeScriptModule(resolve(frontendRoot, 'src/api/sectionCache.ts')),
   ]);
-  const call = '{!isSearching && renderFranchisePagination(Math.max(groupedResults.length, catalogueExpectedTitles))}';
-  const positions = [...resultsSource.matchAll(new RegExp(call.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))]
+  const calls = [...resultsSource.matchAll(/\{!\s*isSearching\s*&&\s*renderFranchisePagination\(/g)];
+  const positions = calls
     .map(match => match.index);
   const movieGridClass = resultsSource.indexOf('className="grid grid-cols-2 items-stretch gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 lg:rounded-2xl');
   const movieGrid = resultsSource.lastIndexOf('<div', movieGridClass);
@@ -52,7 +52,7 @@ test('Marvel Movies, DC Movies, DC Animated and Favourites Movies share top and 
   assert.equal(positions.length, 2, 'the movie cards share top and bottom pagination bars');
   assert.ok(movieGridClass >= 0 && movieGrid >= 0);
   assert.ok(positions[0] < movieGrid);
-  assert.equal(resultsSource.slice(positions[0] + call.length, movieGrid).trim(), '');
+  assert.match(resultsSource.slice(positions[0], movieGrid), /sortedSectionMovieCards/);
   assert.ok(positions[1] > movieGrid);
   assert.match(panelSource, /total > franchiseGridPageSize/);
   assert.match(panelSource, /franchiseGridPage <= 1[\s\S]*navigateFranchisePage\(Math\.max\(1, franchiseGridPage - 1\)\)/);

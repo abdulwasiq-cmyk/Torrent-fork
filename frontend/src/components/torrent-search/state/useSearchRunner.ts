@@ -1,10 +1,10 @@
 import React from 'react';
-import { api, ImdbRatingResult, MarvelCatalogueResponse, TorrentSearchResult } from '../../../api/client.ts';
+import { api, ImdbRatingResult, TorrentSearchResult } from '../../../api/client.ts';
 import { setHighQualityPostersReady } from '../../MovieCards.tsx';
-import { episodeSeriesTitle, groupTorrentResults, imdbRatingKey, mergeSearchMetadataItems, normalizeGroupTitle, normalizeSavedOttTitle, releaseDateSortValue, torrentMediaIdentity, torrentResultKey } from '../grouping.ts';
-import { franchiseCatalogueSection, franchiseMoviePageFromSection, franchiseSectionDocumentFromCache, sectionRowTmdbId } from '../../../api/sectionCache.ts';
+import { episodeSeriesTitle, groupTorrentResults, imdbRatingKey, mergeSearchMetadataItems, normalizeGroupTitle, normalizeSavedOttTitle, torrentMediaIdentity, torrentResultKey } from '../grouping.ts';
+import { franchiseMoviePageFromSection, franchiseSectionDocumentFromCache, sectionRowTmdbId } from '../../../api/sectionCache.ts';
 import { normalizeSavedOttProviders } from '../ottProviders.ts';
-import { readFranchisePageCache, readPersistentSearchAvailability, readPersistentSearchMetadata, writeFranchisePageCache } from '../persistentCaches.ts';
+import { readPersistentSearchAvailability, readPersistentSearchMetadata } from '../persistentCaches.ts';
 import { useNexStreamState } from './useNexStreamState.ts';
 import { useSearchMetadataState } from './useSearchMetadataState.ts';
 import { useMoviePreviewState } from './useMoviePreviewState.ts';
@@ -34,7 +34,6 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
     setIsDcLiveActionEnglishResults(searchMode === 'dc-live-action');
     setShowMarvelWebSeries(false);
     setShowDcWebSeries(false);
-    const chronologicalFranchiseModes = new Set(['marvel', 'marvel-hindi', 'dc-live-action', 'dc-live-action-hindi', 'dc-animated', 'classics']);
     setMovieTorrentSearchError('');
     setMovieTorrentPreviewCatalogueId(null);
     movieTorrentSearchControllerRef.current?.abort();
@@ -193,137 +192,77 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
           section => api.getSectionCache(section),
           searchMode,
         );
-        if (sectionCache) {
-          const { location: sectionLocation, document } = sectionCache;
-          if (generation !== searchGenerationRef.current || controller.signal.aborted) return;
-          const subsection = document.subsections[sectionLocation.subsection];
-          let torrentDocument: Awaited<ReturnType<typeof api.getTorrentSectionCache>> | undefined;
-          try {
-            torrentDocument = await api.getTorrentSectionCache(sectionLocation.section);
-          } catch (torrentCacheError) {
-            console.warn('[PREPARE_TRACE] section torrent cache unavailable', {
-              section: sectionLocation.section,
-              error: String(torrentCacheError),
-            });
-          }
-          const pageSize = Math.max(1, Number(subsection?.pageSize) || franchiseGridPageSize);
-          const cataloguePage = subsection && franchiseMoviePageFromSection(
-            document,
-            sectionLocation.subsection,
-            1,
-            Math.max(1, subsection.results.length),
-            torrentDocument,
-          );
-          if (!subsection || !cataloguePage) {
-            throw new Error('The requested subsection is missing from its section cache.');
-          }
-          setFranchiseMovieCardsByMode(previous => ({
-            ...previous,
-            [searchMode]: cataloguePage.cards,
-          }));
-          setSearchAvailabilityByGroup({});
-          data = cataloguePage.results;
-          const totalResults = cataloguePage.totalResults;
-          setCatalogueExpectedTitles(totalResults > pageSize ? totalResults : 0);
-          const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
-          franchiseLoadedPagesRef.current.set(
-            searchMode,
-            new Set(Array.from({ length: totalPages }, (_, index) => index + 1)),
-          );
-          setCatalogueBuildProgress('');
-          setSearchMetadata(previous => mergeSearchMetadataItems(previous, subsection.results.map(row => {
-            const tmdbId = sectionRowTmdbId(row);
-            return {
-              id: tmdbId ?? row.id ?? row.title,
-              tmdbId,
+        if (!sectionCache) {
+          throw new Error('No metadata section cache is configured for this catalogue.');
+        }
+        const { location: sectionLocation, document } = sectionCache;
+        if (generation !== searchGenerationRef.current || controller.signal.aborted) return;
+        const subsection = document.subsections[sectionLocation.subsection];
+        const pageSize = Math.max(1, Number(subsection?.pageSize) || franchiseGridPageSize);
+        const cataloguePage = subsection && franchiseMoviePageFromSection(
+          document,
+          sectionLocation.subsection,
+          1,
+          Math.max(1, subsection.results.length),
+        );
+        if (!subsection || !cataloguePage) {
+          throw new Error('The requested subsection is missing from its section cache.');
+        }
+        setFranchiseMovieCardsByMode(previous => ({
+          ...previous,
+          [searchMode]: cataloguePage.cards,
+        }));
+        setSearchAvailabilityByGroup({});
+        data = [];
+        const totalResults = cataloguePage.totalResults;
+        setCatalogueExpectedTitles(totalResults > pageSize ? totalResults : 0);
+        const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+        franchiseLoadedPagesRef.current.set(
+          searchMode,
+          new Set(Array.from({ length: totalPages }, (_, index) => index + 1)),
+        );
+        setCatalogueBuildProgress('');
+        setSearchMetadata(previous => mergeSearchMetadataItems(previous, subsection.results.map(row => {
+          const tmdbId = sectionRowTmdbId(row);
+          return {
+            id: tmdbId ?? row.id ?? row.title,
+            tmdbId,
+            title: row.title,
+            year: Number(row.year) || null,
+            mediaType: 'movie' as const,
+            overview: row.overview || undefined,
+            posterUrl: row.posterUrl || undefined,
+            backdropUrl: row.backdropUrl || undefined,
+            rating: row.rating ?? undefined,
+            tmdbUrl: row.tmdbUrl || (tmdbId
+              ? 'https://www.themoviedb.org/movie/' + tmdbId
+              : ''),
+            source: row.source || 'self-contained-section-cache',
+          };
+        })));
+        setImdbRatingsByKey(previous => {
+          const next = { ...previous };
+          const cacheKeys = subsection.results.map(row => imdbRatingKey(row.title, row.year));
+          cacheKeys.forEach(key => { delete next[key]; });
+          subsection.results.forEach(row => {
+            if (!row.imdbRatingStatus && !(Number(row.imdbRating) > 0)) return;
+            const status = row.imdbRatingStatus || 'found';
+            const rating: ImdbRatingResult = {
+              query: row.title,
               title: row.title,
               year: Number(row.year) || null,
-              mediaType: 'movie' as const,
-              overview: row.overview || undefined,
-              posterUrl: row.posterUrl || undefined,
-              backdropUrl: row.backdropUrl || undefined,
-              rating: row.rating ?? undefined,
-              tmdbUrl: row.tmdbUrl || (tmdbId
-                ? 'https://www.themoviedb.org/movie/' + tmdbId
-                : ''),
-              source: row.source || 'self-contained-section-cache',
+              mediaType: 'movie',
+              status,
+              imdbId: row.imdbId || undefined,
+              imdbRating: row.imdbRating,
+              imdbVotes: row.imdbVotes == null ? null : String(row.imdbVotes),
+              imdbUrl: row.imdbUrl || undefined,
             };
-          })));
-          setImdbRatingsByKey(previous => {
-            const next = { ...previous };
-            const cacheKeys = subsection.results.map(row => imdbRatingKey(row.title, row.year));
-            cacheKeys.forEach(key => { delete next[key]; });
-            subsection.results.forEach(row => {
-              if (!row.imdbRatingStatus && !(Number(row.imdbRating) > 0)) return;
-              const status = row.imdbRatingStatus || 'found';
-              const rating: ImdbRatingResult = {
-                query: row.title,
-                title: row.title,
-                year: Number(row.year) || null,
-                mediaType: 'movie',
-                status,
-                imdbId: row.imdbId || undefined,
-                imdbRating: row.imdbRating,
-                imdbVotes: row.imdbVotes == null ? null : String(row.imdbVotes),
-                imdbUrl: row.imdbUrl || undefined,
-              };
-              next[imdbRatingKey(row.title, row.year)] = rating;
-            });
-            return next;
+            next[imdbRatingKey(row.title, row.year)] = rating;
           });
-          setSearchMetadataStatus('ready');
-        } else {
-          // Legacy franchise modes remain available for catalogues without a
-          // corresponding subsection in the self-contained section documents.
-          const CATALOGUE_PAGE_SIZE = franchiseGridPageSize;
-          const fetchCataloguePage = (page: number) => searchMode === 'marvel'
-            ? api.getMarvelCatalogue(controller.signal, { page, pageSize: CATALOGUE_PAGE_SIZE })
-            : api.getCatalogue(searchMode, controller.signal, { page, pageSize: CATALOGUE_PAGE_SIZE });
-
-          const browserCachedPage = readFranchisePageCache(searchMode, 1);
-          let catalogue: MarvelCatalogueResponse = browserCachedPage
-            ? {
-                status: 'ready' as const,
-                results: browserCachedPage.results,
-                completed: browserCachedPage.totalMovies,
-                total: browserCachedPage.totalMovies,
-                totalMovies: browserCachedPage.totalMovies,
-                totalPages: browserCachedPage.totalPages,
-                refreshing: false,
-              }
-            : await fetchCataloguePage(1);
-          let catalogueAttempts = 0;
-          while (
-            (catalogue.status === 'building' || catalogue.status === 'idle') &&
-            catalogueAttempts < 8
-          ) {
-            if (generation !== searchGenerationRef.current || controller.signal.aborted) return;
-            setCatalogueBuildProgress(
-              'Building shared ' + searchMode.replace(/-/g, ' ') + ' catalogue: ' +
-              catalogue.completed + ' of ' + catalogue.total + ' searches completed.'
-            );
-            await new Promise<void>(resolve => window.setTimeout(resolve, 2200));
-            catalogueAttempts += 1;
-            catalogue = await fetchCataloguePage(1);
-          }
-          if (generation !== searchGenerationRef.current || controller.signal.aborted) return;
-          if (catalogue.status !== 'ready' || !Array.isArray(catalogue.results)) {
-            throw new Error(catalogue.error || 'Could not load the first catalogue page.');
-          }
-          data = catalogue.results;
-          const totalCataloguePages = Number(catalogue.totalPages) || 1;
-          const expectedTitles = Number(catalogue.totalMovies) || (totalCataloguePages * CATALOGUE_PAGE_SIZE);
-          setCatalogueExpectedTitles(totalCataloguePages > 1 ? expectedTitles : 0);
-          if (!browserCachedPage) {
-            writeFranchisePageCache(searchMode, 1, data, expectedTitles, totalCataloguePages);
-          }
-          franchiseLoadedPagesRef.current.set(searchMode, new Set([1]));
-          setCatalogueBuildProgress(
-            catalogue.refreshing
-              ? 'Showing the cached first page; newer catalogue data will be used on a later visit.'
-              : ''
-          );
-        }
+          return next;
+        });
+        setSearchMetadataStatus('ready');
       } else {
         const livePromise = api.searchTorrents(trimmed, 50, controller.signal);
         // Do not make live torrent results wait for the seven catalogue lookups.
@@ -343,24 +282,6 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
 
       // Keep the cached franchise/favourites catalogues in full release-date
       // order even if an older cache snapshot or API response is unsorted.
-      if (searchMode && !franchiseCatalogueSection(searchMode) && chronologicalFranchiseModes.has(searchMode)) {
-        data = [...data].sort((a, b) => {
-          const dateOrder = releaseDateSortValue(b) - releaseDateSortValue(a);
-          if (dateOrder !== 0) return dateOrder;
-
-          const aIdentity = torrentMediaIdentity(a);
-          const bIdentity = torrentMediaIdentity(b);
-          const titleOrder = aIdentity.normalized.localeCompare(
-            bIdentity.normalized,
-            undefined,
-            { numeric: true },
-          );
-          if (titleOrder !== 0) return titleOrder;
-
-          return (Number(b.seeders) || 0) - (Number(a.seeders) || 0);
-        });
-      }
-
       // Never let an older request overwrite a newer search. This matters
       // when a slow 1337x fallback finishes after a later click.
       if (generation !== searchGenerationRef.current) return;

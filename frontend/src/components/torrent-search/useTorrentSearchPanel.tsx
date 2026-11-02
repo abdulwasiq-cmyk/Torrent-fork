@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { api, MovieCatalogueKey, TorrentCacheDocument, TorrentSearchResult } from '../../api/client.ts';
+import { api, MovieCatalogueKey } from '../../api/client.ts';
 import { franchiseMoviePageFromSection, movieCataloguePageFromSection, movieCatalogueSection, tvCataloguePageFromSectionCache } from '../../api/sectionCache.ts';
 import { setHighQualityPostersReady } from '../MovieCards.tsx';
 import { imdbRatingKey, torrentResultKey } from './grouping.ts';
-import { CachedFranchiseSearchMode, persistImdbRatings, persistSearchAvailability, persistSearchMetadata, readFranchisePageCache, writeFranchisePageCache } from './persistentCaches.ts';
+import { CachedFranchiseSearchMode, persistImdbRatings, persistSearchAvailability, persistSearchMetadata } from './persistentCaches.ts';
 import { readPosterTitleCache } from './posterCache.ts';
 import { lowQualityPosterUrl } from './posterUrls.ts';
 import { isDefaultClassicsSort } from './classicsSort.ts';
@@ -349,7 +349,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
     nexStreamSearchGenerationRef, nexStreamSearchControllerRef, setNexStreamLoading,
     setNexStreamSearchMode, setNexStreamResults, setNexStreamError, setNexStreamPlayer,
   });
-  const { searchMovieTorrents, selectMovieTorrentGroup, closeMoviePrepareCard } = useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef, setExpandedSearchGroupKey, movieTorrentSearchControllerRef, movieTorrentSearchGenerationRef, setMovieTorrentSearchTitle, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewPosterUrl, cataloguePosterUrlsRef, setMovieTorrentSearchLoading, setMovieTorrentSearchError, setMovieTorrentPreviewGroup, setMovieTorrentPickerGroups, setSelectedMovieTorrentQualityByGroup, movieTorrentDetailsCacheRef, prepareBuildPendingRef, movieCatalogue, setSearched, error, setResults, setQuery, setSelectedQualityByGroup, startPosterBackgroundSearch, persistMovieTorrentCache });
+  const { searchMovieTorrents, selectMovieTorrentGroup, closeMoviePrepareCard } = useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef, setExpandedSearchGroupKey, movieTorrentSearchControllerRef, movieTorrentSearchGenerationRef, setMovieTorrentSearchTitle, setMovieTorrentPreviewCatalogueId, setMovieTorrentPreviewPosterUrl, cataloguePosterUrlsRef, setMovieTorrentSearchLoading, setMovieTorrentSearchError, setMovieTorrentPreviewGroup, setMovieTorrentPickerGroups, setSelectedMovieTorrentQualityByGroup, movieTorrentDetailsCacheRef, prepareBuildPendingRef, movieCatalogue, activeFranchiseSearchMode, setSearched, error, setResults, setQuery, setSelectedQualityByGroup, startPosterBackgroundSearch, persistMovieTorrentCache });
   // Opening any Marvel/DC/Classics/search view must close a Hollywood/Bollywood web-series list, otherwise it
   // stays on screen and the new results appear below it.
   const runSearch: typeof runSearchRaw = (...args) => {
@@ -491,8 +491,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
       }
     }
   };
-  // background: used to fetch the other pages for a section-wide sort. It must never abort the page the
-  // user asked for, touch the loading state, or bump the request generation (that made "Next" crawl).
+  // Background page reads only fill metadata rows needed for whole-section sorting.
   async function loadCachedFranchisePage(mode: CachedFranchiseSearchMode, page: number, background = false): Promise<void> {
     if (!background) {
       franchisePageRequestRef.current?.abort();
@@ -504,29 +503,6 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
       if (!background) {
         setIsSearching(false);
         setCatalogueBuildProgress('');
-      }
-      return;
-    }
-    const sectionLocation = franchiseCatalogueSection(mode);
-    const browserCachedPage = sectionLocation ? null : readFranchisePageCache(mode, page);
-    if (browserCachedPage) {
-      setResults(previous => {
-        const byKey = new Map<string, TorrentSearchResult>();
-        [...previous, ...browserCachedPage.results].forEach(row => {
-          const key = torrentResultKey(row);
-          if (!byKey.has(key)) byKey.set(key, row);
-        });
-        return Array.from(byKey.values());
-      });
-      const nowLoaded = loaded || new Set<number>();
-      nowLoaded.add(page);
-      franchiseLoadedPagesRef.current.set(mode, nowLoaded);
-      if (browserCachedPage.totalMovies > 0) setCatalogueExpectedTitles(browserCachedPage.totalMovies);
-      if (!background) {
-        setSearched(true);
-        setError('');
-        setCatalogueBuildProgress('');
-        setIsSearching(false);
       }
       return;
     }
@@ -544,107 +520,44 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
         section => api.getSectionCache(section),
         mode,
       );
-      if (sectionCache) {
-        const { location: sectionLocation, document } = sectionCache;
-        if (isStale()) return;
-        const subsection = document.subsections[sectionLocation.subsection];
-        if (!subsection || subsection.mediaType !== 'movie') {
-          throw new Error('The requested subsection is missing from its section cache.');
-        }
-        let torrentDocument: TorrentCacheDocument | undefined;
-        try {
-          torrentDocument = await api.getTorrentSectionCache(sectionLocation.section);
-        } catch (torrentCacheError) {
-          console.warn('[PREPARE_TRACE] section torrent cache unavailable', {
-            section: sectionLocation.section,
-            error: String(torrentCacheError),
-          });
-        }
-        const pageSize = Math.max(1, Number(subsection.pageSize) || franchiseGridPageSize);
-        const cataloguePage = franchiseMoviePageFromSection(
-          document,
-          sectionLocation.subsection,
-          page,
-          pageSize,
-          torrentDocument,
-        );
-        if (!cataloguePage) {
-          throw new Error('The requested subsection is missing from its section cache.');
-        }
-        const pageRows = cataloguePage.results;
-        setFranchiseMovieCardsByMode(previous => {
-          const byKey = new Map((previous[mode] || []).map(card => [card.key, card]));
-          cataloguePage.cards.forEach(card => byKey.set(card.key, card));
-          return { ...previous, [mode]: Array.from(byKey.values()) };
-        });
-        setResults(previous => {
-          const byKey = new Map<string, TorrentSearchResult>();
-          [...previous, ...pageRows].forEach(row => {
-            const key = torrentResultKey(row);
-            if (!byKey.has(key)) byKey.set(key, row);
-          });
-          return Array.from(byKey.values());
-        });
-        const nowLoaded = franchiseLoadedPagesRef.current.get(mode) || new Set<number>();
-        nowLoaded.add(page);
-        franchiseLoadedPagesRef.current.set(mode, nowLoaded);
-        const totalTitles = cataloguePage.totalResults;
-        if (totalTitles > 0) setCatalogueExpectedTitles(totalTitles);
-        if (!background) {
-          setSearched(true);
-          setError('');
-          setCatalogueBuildProgress('');
-        }
-        return;
+      if (!sectionCache) {
+        throw new Error('No metadata section cache is configured for this catalogue.');
       }
-
-      const fetchPage = () => mode === 'marvel'
-        ? api.getMarvelCatalogue(controller.signal, { page, pageSize: franchiseGridPageSize })
-        : api.getCatalogue(mode, controller.signal, { page, pageSize: franchiseGridPageSize });
-      let catalogue = await fetchPage();
-      let attempts = 0;
-      while ((catalogue.status === 'building' || catalogue.status === 'idle') && attempts < 8) {
-        if (isStale()) return;
-        if (!background) setCatalogueBuildProgress(
-          'Building shared ' + mode.replace(/-/g, ' ') + ' catalogue: ' +
-          catalogue.completed + ' of ' + catalogue.total + ' searches completed.'
-        );
-        await new Promise<void>(resolve => window.setTimeout(resolve, 2200));
-        attempts += 1;
-        catalogue = await fetchPage();
-      }
+      const { location: sectionLocation, document } = sectionCache;
       if (isStale()) return;
-      if (catalogue.status !== 'ready' || !Array.isArray(catalogue.results)) {
-        throw new Error(catalogue.error || ('Could not load page ' + page + ' of the catalogue.'));
+      const subsection = document.subsections[sectionLocation.subsection];
+      if (!subsection || subsection.mediaType !== 'movie') {
+        throw new Error('The requested subsection is missing from its section cache.');
       }
-      const pageRows = catalogue.results;
-      setResults(previous => {
-        const byKey = new Map<string, TorrentSearchResult>();
-        [...previous, ...pageRows].forEach(row => {
-          const key = torrentResultKey(row);
-          if (!byKey.has(key)) byKey.set(key, row);
-        });
-        return Array.from(byKey.values());
+      const pageSize = Math.max(1, Number(subsection.pageSize) || franchiseGridPageSize);
+      const cataloguePage = franchiseMoviePageFromSection(
+        document,
+        sectionLocation.subsection,
+        page,
+        pageSize,
+      );
+      if (!cataloguePage) {
+        throw new Error('The requested subsection is missing from its section cache.');
+      }
+      setFranchiseMovieCardsByMode(previous => {
+        const byKey = new Map((previous[mode] || []).map(card => [card.key, card]));
+        cataloguePage.cards.forEach(card => byKey.set(card.key, card));
+        return { ...previous, [mode]: Array.from(byKey.values()) };
       });
       const nowLoaded = franchiseLoadedPagesRef.current.get(mode) || new Set<number>();
       nowLoaded.add(page);
       franchiseLoadedPagesRef.current.set(mode, nowLoaded);
-      const totalTitles = Number(catalogue.totalMovies) || Number(catalogue.total) || 0;
-      const totalPages = Number(catalogue.totalPages) || Math.max(1, Math.ceil(totalTitles / franchiseGridPageSize));
-      writeFranchisePageCache(mode, page, pageRows, totalTitles, totalPages);
+      const totalTitles = cataloguePage.totalResults;
       if (totalTitles > 0) setCatalogueExpectedTitles(totalTitles);
       if (!background) {
         setSearched(true);
-        setCatalogueBuildProgress(
-          catalogue.refreshing
-            ? 'Showing cached catalogue results; a refreshed page will appear on a later visit.'
-            : ''
-        );
+        setError('');
+        setCatalogueBuildProgress('');
       }
     } catch (error: any) {
-      if (background || isStale()) return;
+      if (isStale()) return;
       setError(String(error?.message || 'Could not load this catalogue page.'));
-      setCatalogueBuildProgress('');
+      if (!background) setCatalogueBuildProgress('');
     } finally {
       if (!background && generation === franchisePageGenerationRef.current) {
         setIsSearching(false);
@@ -934,6 +847,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
     setMarvelWebSeriesLoading,
     marvelWebSeriesError,
     setMarvelWebSeriesError,
+    isMarvelEnglishResults,
     openRegionalTvCatalogue,
     openRegionalCatalogue,
     selectHighestRatedSection,
