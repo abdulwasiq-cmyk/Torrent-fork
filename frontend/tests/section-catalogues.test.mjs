@@ -34,6 +34,10 @@ const resultsSectionSource = await readFile(
   resolve(frontendRoot, 'src/components/torrent-search/sections/SearchResultsSection.tsx'),
   'utf8',
 );
+const searchRunnerSource = await readFile(
+  resolve(frontendRoot, 'src/components/torrent-search/state/useSearchRunner.ts'),
+  'utf8',
+);
 const searchApiBundle = await build({
   entryPoints: [resolve(frontendRoot, 'src/api/search.ts')],
   bundle: true,
@@ -55,6 +59,10 @@ const catalogues = [
 ];
 
 test('cached franchise searches join torrent rows before building result cards', () => {
+  assert.match(searchRunnerSource, /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*1,\s*pageSize,\s*torrentDocument,\s*\)/);
+  assert.match(searchRunnerSource, /setFranchiseMovieCardsByMode\(previous => \(\{\s*\.\.\.previous,\s*\[searchMode\]: cataloguePage\.cards/);
+  assert.match(searchRunnerSource, /data = cataloguePage\.results/);
+  assert.match(searchRunnerSource, /franchiseLoadedPagesRef\.current\.set\(searchMode, new Set\(\[1\]\)\)/);
   assert.match(franchisePanelSource, /api\.getTorrentSectionCache\(sectionLocation\.section\)/);
   assert.match(
     franchisePanelSource,

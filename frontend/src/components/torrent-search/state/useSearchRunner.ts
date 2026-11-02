@@ -2,7 +2,7 @@ import React from 'react';
 import { api, ImdbRatingResult, MarvelCatalogueResponse, TorrentSearchResult } from '../../../api/client.ts';
 import { setHighQualityPostersReady } from '../../MovieCards.tsx';
 import { episodeSeriesTitle, groupTorrentResults, imdbRatingKey, mergeSearchMetadataItems, normalizeGroupTitle, normalizeSavedOttTitle, releaseDateSortValue, torrentMediaIdentity, torrentResultKey } from '../grouping.ts';
-import { franchiseCatalogueSection, franchiseRowsFromSection, franchiseSectionDocumentFromCache, sectionRowTmdbId } from '../../../api/sectionCache.ts';
+import { franchiseCatalogueSection, franchiseMoviePageFromSection, franchiseSectionDocumentFromCache, sectionRowTmdbId } from '../../../api/sectionCache.ts';
 import { normalizeSavedOttProviders } from '../ottProviders.ts';
 import { readFranchisePageCache, readPersistentSearchAvailability, readPersistentSearchMetadata, writeFranchisePageCache } from '../persistentCaches.ts';
 import { useNexStreamState } from './useNexStreamState.ts';
@@ -15,7 +15,7 @@ import { usePosterState } from './usePosterState.ts';
 import { useNexStreamFlow } from './useNexStreamFlow.ts';
 import { useRecentSearches } from './useRecentSearches.ts';
 
-export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearchMode, franchisePageRequestRef, franchisePageGenerationRef, franchiseLoadedPagesRef, posterFirstPageReadyRef, setPosterFirstPageReady, setIsPresetCatalogueAction, setIsMarvelEnglishResults, setIsDcLiveActionEnglishResults, setShowMarvelWebSeries, setError, setSearched, setIsSearching, setCatalogueBuildProgress, setCatalogueExpectedTitles, setMovieCatalogue, franchiseGridPageSize, franchiseGridPage, setShowDcWebSeries, setMovieTorrentSearchError, setMovieTorrentPreviewCatalogueId, movieTorrentSearchControllerRef, movieTorrentSearchGenerationRef, setMovieTorrentSearchLoading, setMovieTorrentPickerGroups, setMovieTorrentPreviewGroup, setExpandedSearchGroupKey, query, setResults, searchGenerationRef, searchRequestRef, setShowRecentSearches, setQuery, setSearchMetadata, setSearchMetadataStatus, setImdbRatingsByKey, setSearchAvailabilityByGroup, setSelectedQualityByGroup, setPosterOverrides, posterMetadataFailedRef, posterLoadedRef, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterBackgroundAttemptsRef, posterBackgroundGenerationRef, saveRecentSearch, searchNexStreamTitles, nexStreamSearchGenerationRef, nexStreamSearchControllerRef, setNexStreamLoading, setNexStreamSearchMode, setNexStreamResults, setNexStreamError, setNexStreamPlayer }: Pick<ReturnType<typeof useCatalogueNavigationState>, 'setFranchiseGridPage' | 'setActiveFranchiseSearchMode' | 'franchisePageRequestRef' | 'franchisePageGenerationRef' | 'franchiseLoadedPagesRef' | 'posterFirstPageReadyRef' | 'setPosterFirstPageReady' | 'setIsPresetCatalogueAction' | 'setIsMarvelEnglishResults' | 'setIsDcLiveActionEnglishResults' | 'setShowMarvelWebSeries' | 'setError' | 'setSearched' | 'setIsSearching' | 'setCatalogueBuildProgress' | 'setCatalogueExpectedTitles' | 'setMovieCatalogue' | 'franchiseGridPageSize' | 'franchiseGridPage'> & Pick<ReturnType<typeof useWebSeriesState>, 'setShowDcWebSeries'> & Pick<ReturnType<typeof useMoviePreviewState>, 'setMovieTorrentSearchError' | 'setMovieTorrentPreviewCatalogueId' | 'movieTorrentSearchControllerRef' | 'movieTorrentSearchGenerationRef' | 'setMovieTorrentSearchLoading' | 'setMovieTorrentPickerGroups' | 'setMovieTorrentPreviewGroup' | 'setExpandedSearchGroupKey'> & Pick<ReturnType<typeof useSearchInputState>, 'query' | 'setResults' | 'searchGenerationRef' | 'searchRequestRef' | 'setShowRecentSearches' | 'setQuery'> & Pick<ReturnType<typeof useSearchMetadataState>, 'setSearchMetadata' | 'setSearchMetadataStatus' | 'setImdbRatingsByKey' | 'setSearchAvailabilityByGroup' | 'setSelectedQualityByGroup'> & Pick<ReturnType<typeof usePosterState>, 'setPosterOverrides' | 'posterMetadataFailedRef' | 'posterLoadedRef' | 'posterBackgroundQueueRef' | 'posterBackgroundQueuedRef' | 'posterBackgroundAttemptsRef' | 'posterBackgroundGenerationRef'> & Pick<ReturnType<typeof useRecentSearches>, 'saveRecentSearch'> & Pick<ReturnType<typeof useNexStreamFlow>, 'searchNexStreamTitles'> & Pick<ReturnType<typeof useNexStreamState>, 'nexStreamSearchGenerationRef' | 'nexStreamSearchControllerRef' | 'setNexStreamLoading' | 'setNexStreamSearchMode' | 'setNexStreamResults' | 'setNexStreamError' | 'setNexStreamPlayer'>) {
+export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearchMode, franchisePageRequestRef, franchisePageGenerationRef, franchiseLoadedPagesRef, setFranchiseMovieCardsByMode, posterFirstPageReadyRef, setPosterFirstPageReady, setIsPresetCatalogueAction, setIsMarvelEnglishResults, setIsDcLiveActionEnglishResults, setShowMarvelWebSeries, setError, setSearched, setIsSearching, setCatalogueBuildProgress, setCatalogueExpectedTitles, setMovieCatalogue, franchiseGridPageSize, franchiseGridPage, setShowDcWebSeries, setMovieTorrentSearchError, setMovieTorrentPreviewCatalogueId, movieTorrentSearchControllerRef, movieTorrentSearchGenerationRef, setMovieTorrentSearchLoading, setMovieTorrentPickerGroups, setMovieTorrentPreviewGroup, setExpandedSearchGroupKey, query, setResults, searchGenerationRef, searchRequestRef, setShowRecentSearches, setQuery, setSearchMetadata, setSearchMetadataStatus, setImdbRatingsByKey, setSearchAvailabilityByGroup, setSelectedQualityByGroup, setPosterOverrides, posterMetadataFailedRef, posterLoadedRef, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterBackgroundAttemptsRef, posterBackgroundGenerationRef, saveRecentSearch, searchNexStreamTitles, nexStreamSearchGenerationRef, nexStreamSearchControllerRef, setNexStreamLoading, setNexStreamSearchMode, setNexStreamResults, setNexStreamError, setNexStreamPlayer }: Pick<ReturnType<typeof useCatalogueNavigationState>, 'setFranchiseGridPage' | 'setActiveFranchiseSearchMode' | 'franchisePageRequestRef' | 'franchisePageGenerationRef' | 'franchiseLoadedPagesRef' | 'setFranchiseMovieCardsByMode' | 'posterFirstPageReadyRef' | 'setPosterFirstPageReady' | 'setIsPresetCatalogueAction' | 'setIsMarvelEnglishResults' | 'setIsDcLiveActionEnglishResults' | 'setShowMarvelWebSeries' | 'setError' | 'setSearched' | 'setIsSearching' | 'setCatalogueBuildProgress' | 'setCatalogueExpectedTitles' | 'setMovieCatalogue' | 'franchiseGridPageSize' | 'franchiseGridPage'> & Pick<ReturnType<typeof useWebSeriesState>, 'setShowDcWebSeries'> & Pick<ReturnType<typeof useMoviePreviewState>, 'setMovieTorrentSearchError' | 'setMovieTorrentPreviewCatalogueId' | 'movieTorrentSearchControllerRef' | 'movieTorrentSearchGenerationRef' | 'setMovieTorrentSearchLoading' | 'setMovieTorrentPickerGroups' | 'setMovieTorrentPreviewGroup' | 'setExpandedSearchGroupKey'> & Pick<ReturnType<typeof useSearchInputState>, 'query' | 'setResults' | 'searchGenerationRef' | 'searchRequestRef' | 'setShowRecentSearches' | 'setQuery'> & Pick<ReturnType<typeof useSearchMetadataState>, 'setSearchMetadata' | 'setSearchMetadataStatus' | 'setImdbRatingsByKey' | 'setSearchAvailabilityByGroup' | 'setSelectedQualityByGroup'> & Pick<ReturnType<typeof usePosterState>, 'setPosterOverrides' | 'posterMetadataFailedRef' | 'posterLoadedRef' | 'posterBackgroundQueueRef' | 'posterBackgroundQueuedRef' | 'posterBackgroundAttemptsRef' | 'posterBackgroundGenerationRef'> & Pick<ReturnType<typeof useRecentSearches>, 'saveRecentSearch'> & Pick<ReturnType<typeof useNexStreamFlow>, 'searchNexStreamTitles'> & Pick<ReturnType<typeof useNexStreamState>, 'nexStreamSearchGenerationRef' | 'nexStreamSearchControllerRef' | 'setNexStreamLoading' | 'setNexStreamSearchMode' | 'setNexStreamResults' | 'setNexStreamError' | 'setNexStreamPlayer'>) {
   const runSearch = async (event?: React.FormEvent, searchOverride?: string, searchMode?: 'marvel' | 'marvel-hindi' | 'dc-live-action' | 'dc-live-action-hindi' | 'dc-animated' | 'classics') => {
     event?.preventDefault();
     setHighQualityPostersReady(false);
@@ -206,18 +206,24 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
               error: String(torrentCacheError),
             });
           }
-          const allResults = franchiseRowsFromSection(
+          const pageSize = Math.max(1, Number(subsection?.pageSize) || franchiseGridPageSize);
+          const cataloguePage = subsection && franchiseMoviePageFromSection(
             document,
             sectionLocation.subsection,
+            1,
+            pageSize,
             torrentDocument,
           );
-          if (!subsection || !allResults) {
+          if (!subsection || !cataloguePage) {
             throw new Error('The requested subsection is missing from its section cache.');
           }
+          setFranchiseMovieCardsByMode(previous => ({
+            ...previous,
+            [searchMode]: cataloguePage.cards,
+          }));
           setSearchAvailabilityByGroup({});
-          const pageSize = Math.max(1, Number(subsection.pageSize) || franchiseGridPageSize);
-          data = allResults.slice(0, pageSize);
-          const totalResults = Number(subsection.totalResults) || allResults.length;
+          data = cataloguePage.results;
+          const totalResults = cataloguePage.totalResults;
           setCatalogueExpectedTitles(totalResults > pageSize ? totalResults : 0);
           franchiseLoadedPagesRef.current.set(searchMode, new Set([1]));
           setCatalogueBuildProgress('');

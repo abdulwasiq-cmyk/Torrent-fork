@@ -332,7 +332,8 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
   ]);
   const { runSearch: runSearchRaw } = useSearchRunner({
     setFranchiseGridPage, setActiveFranchiseSearchMode, franchisePageRequestRef,
-    franchisePageGenerationRef, franchiseLoadedPagesRef, posterFirstPageReadyRef,
+    franchisePageGenerationRef, franchiseLoadedPagesRef, setFranchiseMovieCardsByMode,
+    posterFirstPageReadyRef,
     setPosterFirstPageReady, setIsPresetCatalogueAction, setIsMarvelEnglishResults,
     setIsDcLiveActionEnglishResults, setShowMarvelWebSeries, setError, setSearched,
     setIsSearching, setCatalogueBuildProgress, setCatalogueExpectedTitles, setMovieCatalogue,
