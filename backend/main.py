@@ -25,6 +25,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -213,6 +214,7 @@ from search.torrent_metadata import MagnetRequest, router as torrent_metadata_ro
 
 
 app = FastAPI(title=APP_NAME)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 def _diagnostic_feature_for_path(path: str) -> str:

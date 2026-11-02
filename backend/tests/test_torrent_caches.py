@@ -10,6 +10,8 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from catalogues import section_caches, torrent_caches
 from fastapi.testclient import TestClient
 from main import app
@@ -27,6 +29,27 @@ EXPECTED_COUNTS = {
     "anime": 0,
     "favourites": 1706,
 }
+
+
+def test_large_api_responses_are_gzip_compressed():
+    assert any(middleware.cls is GZipMiddleware for middleware in app.user_middleware)
+
+    test_app = FastAPI()
+    test_app.add_middleware(GZipMiddleware, minimum_size=500)
+    payload = b"cached torrent data " * 200
+
+    @test_app.get("/large")
+    async def large_response():
+        return Response(content=payload)
+
+    response = TestClient(test_app).get(
+        "/large",
+        headers={"Accept-Encoding": "gzip"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-encoding"] == "gzip"
+    assert response.content == payload
 
 
 def _load_torrent_bundle_builder():
