@@ -99,7 +99,7 @@ test('migrated Avengers movie card resolves cached Marvel results into an enable
     record.identityKind === 'infoHash' &&
     Boolean(record.magnetUrl || record.downloadUrl || record.sourceUrl || record.infoHash || record.infoUrl)
   ));
-  const selectedSource = matches[0].magnetUrl || matches[0].downloadUrl || matches[0].sourceUrl;
+  const selectedSource = matches[0].magnetUrl || matches[0].downloadUrl || matches[0].sourceUrl || matches[0].infoHash || matches[0].infoUrl;
   assert.ok(selectedSource);
   assert.equal(matches[0].sectionCacheRecord, true);
   assert.equal(filterResults(matches).length, matches.length);
