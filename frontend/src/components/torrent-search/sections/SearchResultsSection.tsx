@@ -34,6 +34,7 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
   const visibleGroupKeys = new Set(groupedResults.map(group => group.key));
   const sortedSectionMovieCards = sectionMovieCards === null ? null : sectionMovieCards
     .filter(card => {
+      if (!card.variants.length) return true;
       const identifiers = [card.catalogue.tmdbId, card.catalogue.id, card.catalogue.imdbId]
         .filter((value): value is string | number => value != null && String(value).trim() !== '')
         .map(value => String(value).toLowerCase());

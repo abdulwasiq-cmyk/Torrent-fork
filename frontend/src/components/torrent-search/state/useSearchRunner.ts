@@ -211,7 +211,7 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
             document,
             sectionLocation.subsection,
             1,
-            pageSize,
+            Math.max(1, subsection.results.length),
             torrentDocument,
           );
           if (!subsection || !cataloguePage) {
@@ -225,7 +225,11 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
           data = cataloguePage.results;
           const totalResults = cataloguePage.totalResults;
           setCatalogueExpectedTitles(totalResults > pageSize ? totalResults : 0);
-          franchiseLoadedPagesRef.current.set(searchMode, new Set([1]));
+          const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+          franchiseLoadedPagesRef.current.set(
+            searchMode,
+            new Set(Array.from({ length: totalPages }, (_, index) => index + 1)),
+          );
           setCatalogueBuildProgress('');
           setSearchMetadata(previous => mergeSearchMetadataItems(previous, subsection.results.map(row => {
             const tmdbId = sectionRowTmdbId(row);

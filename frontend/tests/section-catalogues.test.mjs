@@ -22,9 +22,10 @@ async function loadTypeScriptModule(filePath, define = {}) {
   return import(`data:text/javascript;base64,${source}`);
 }
 
-const [sectionCache, grouping] = await Promise.all([
+const [sectionCache, grouping, classicsSort] = await Promise.all([
   loadTypeScriptModule(resolve(frontendRoot, 'src/api/sectionCache.ts')),
   loadTypeScriptModule(resolve(frontendRoot, 'src/components/torrent-search/grouping.ts')),
+  loadTypeScriptModule(resolve(frontendRoot, 'src/components/torrent-search/classicsSort.ts')),
 ]);
 const franchisePanelSource = await readFile(
   resolve(frontendRoot, 'src/components/torrent-search/useTorrentSearchPanel.tsx'),
@@ -59,10 +60,12 @@ const catalogues = [
 ];
 
 test('cached franchise searches join torrent rows before building result cards', () => {
-  assert.match(searchRunnerSource, /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*1,\s*pageSize,\s*torrentDocument,\s*\)/);
+  assert.match(searchRunnerSource, /franchiseMoviePageFromSection\(\s*document,\s*sectionLocation\.subsection,\s*1,\s*Math\.max\(1,\s*subsection\.results\.length\),\s*torrentDocument,\s*\)/);
   assert.match(searchRunnerSource, /setFranchiseMovieCardsByMode\(previous => \(\{\s*\.\.\.previous,\s*\[searchMode\]: cataloguePage\.cards/);
   assert.match(searchRunnerSource, /data = cataloguePage\.results/);
-  assert.match(searchRunnerSource, /franchiseLoadedPagesRef\.current\.set\(searchMode, new Set\(\[1\]\)\)/);
+  assert.match(searchRunnerSource, /const totalPages = Math\.max\(1, Math\.ceil\(totalResults \/ pageSize\)\)/);
+  assert.match(searchRunnerSource, /new Set\(Array\.from\(\{ length: totalPages \}, \(_, index\) => index \+ 1\)\)/);
+  assert.match(resultsSectionSource, /if \(!card\.variants\.length\) return true/);
   assert.match(franchisePanelSource, /api\.getTorrentSectionCache\(sectionLocation\.section\)/);
   assert.match(
     franchisePanelSource,
@@ -145,6 +148,36 @@ test('franchise movie catalogues load section records through the card-rendering
         variant.mediaTitle === card.title &&
         String(variant.tmdbId) === String(card.catalogue.tmdbId)
       )));
+      const allCardsPage = sectionCache.franchiseMoviePageFromSection(
+        loaded.document,
+        catalogue.subsection,
+        1,
+        subsection.results.length,
+        torrentDocument,
+      );
+      assert.ok(allCardsPage);
+      const sortedCards = allCardsPage.cards.slice().sort(classicsSort.classicsComparator(
+        classicsSort.DEFAULT_CLASSICS_SORT,
+        card => grouping.releaseDateSortValue(card.posterResult),
+        card => classicsSort.ratingValue(card.posterResult),
+        card => grouping.torrentMediaIdentity(card.posterResult).normalized,
+      ));
+      const sortedPageOne = sectionCache.franchiseMovieCardsForPage(sortedCards, 1, 18);
+      const sortedPageTwo = sectionCache.franchiseMovieCardsForPage(sortedCards, 2, 18);
+      assert.equal(sortedPageOne.length, 18);
+      assert.equal(sortedPageTwo.length, 18);
+      assert.equal(
+        sortedPageOne.some(first => sortedPageTwo.some(second => first.key === second.key)),
+        false,
+        'catalogue pages must remain distinct after sorting the complete row set',
+      );
+      assert.equal(
+        sortedPageOne.some(first => sortedPageTwo.some(second => (
+          first.title === second.title && first.year === second.year
+        ))),
+        false,
+        'catalogue pages must not repeat a title/year pair',
+      );
       assert.equal(
         grouping.filterTorrentSearchResults(
           [{ title: 'Unseeded torrent', size: 0, seeders: 0, leechers: 0 }],
