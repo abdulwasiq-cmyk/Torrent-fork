@@ -411,6 +411,13 @@
     [
      "GET"
     ],
+    "/api/sections/{section}/torrent-options",
+    "api_get_movie_torrent_options"
+   ],
+   [
+    [
+     "GET"
+    ],
     "/api/catalogue/ott/search",
     "api_search_saved_ott"
    ],
@@ -1183,6 +1190,13 @@
     ],
     "/api/sections/{section}/torrents",
     "api_get_torrent_cache"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/sections/{section}/torrent-options",
+    "api_get_movie_torrent_options"
    ],
    [
     [
