@@ -12,6 +12,7 @@ Env: CACHE_BUNDLE_BASE_URL (default: the cache-data release; "off" disables),
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import io
 import json
 import os
@@ -26,6 +27,10 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 DEFAULT_BASE = "https://github.com/wroxtaaar/Torrent-Studio/releases/download/cache-data"
+DEFAULT_MANIFEST_URL = (
+    "https://raw.githubusercontent.com/wroxtaaar/Torrent-Studio/"
+    "cache-manifests/cache-bundles/metadata.json"
+)
 VERSION_FILE = ".bundle-version"
 MANIFEST = "cache-bundle.json"
 BUNDLE = "cache-bundle.tar.gz"
@@ -78,6 +83,15 @@ def _safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
     return members
 
 
+def _is_torrent_cache_artifact(name: str) -> bool:
+    filename = Path(name).name
+    return (
+        filename in {"torrent-cache-manifest.json", "torrent-cache-bundle.json"}
+        or filename.endswith("-torrents.json")
+        or filename.startswith("torrent-cache-bundle-")
+    )
+
+
 def _validate_section_documents(stage: Path) -> None:
     for filename in SECTION_FILES:
         path = stage / filename
@@ -116,10 +130,43 @@ def _write_version_marker(path: Path, version: str) -> None:
             temporary_path.unlink()
 
 
-def apply_bundle(seed: Path, base: str) -> str:
+def _generation_key(version: str) -> tuple[int, str] | None:
+    timestamp = re.match(r"^(\d{8}T\d{6}Z)(?:-|$)", version)
+    if timestamp:
+        return (2, timestamp.group(1))
+    numeric = re.fullmatch(r"v(\d+)", version, re.IGNORECASE)
+    if numeric:
+        return (1, f"{int(numeric.group(1)):020d}")
+    return None
+
+
+def _reject_generation_downgrade(seed: Path, version: str) -> None:
+    marker = seed / VERSION_FILE
+    if not marker.is_file():
+        return
+    current = marker.read_text(encoding="utf-8").strip()
+    if not current or current == version:
+        return
+    incoming_key = _generation_key(version)
+    current_key = _generation_key(current)
+    if incoming_key is None or current_key is None or incoming_key[0] != current_key[0]:
+        raise ValueError(
+            f"Cannot safely compare metadata generations {current!r} and {version!r}"
+        )
+    if incoming_key[1] < current_key[1]:
+        raise ValueError(
+            f"Refusing stale metadata generation {version!r}; "
+            f"installed generation is {current!r}"
+        )
+
+
+def _apply_bundle_locked(seed: Path, base: str, manifest_url: str | None = None) -> str:
     base = base.rstrip("/")
-    manifest_url = _with_query(f"{base}/{MANIFEST}", cacheBust=str(time.time_ns()))
-    manifest = json.loads(_get(manifest_url, 10, 1024 * 1024))
+    pointer_url = _with_query(
+        manifest_url or f"{base}/{MANIFEST}",
+        cacheBust=str(time.time_ns()),
+    )
+    manifest = json.loads(_get(pointer_url, 10, 1024 * 1024))
     if not isinstance(manifest, dict):
         raise ValueError("invalid cache bundle manifest")
     version = manifest.get("version")
@@ -136,6 +183,7 @@ def apply_bundle(seed: Path, base: str) -> str:
             f"manifest_version={version} downloaded_sha256=not-downloaded "
             f"installed_version={version} status=already-current"
         )
+    _reject_generation_downgrade(seed, version)
 
     bundle_name = manifest.get("bundle", BUNDLE)
     if (
@@ -161,6 +209,8 @@ def apply_bundle(seed: Path, base: str) -> str:
         with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
             members = _safe_members(tar)
             for m in members:
+                if _is_torrent_cache_artifact(m.name):
+                    continue
                 dest = stage / m.name
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 with tar.extractfile(m) as src, open(dest, "wb") as out:
@@ -168,6 +218,7 @@ def apply_bundle(seed: Path, base: str) -> str:
         for f in stage.rglob("*.json"):  # refuse to install anything that does not parse
             json.loads(f.read_text(encoding="utf-8"))
         _validate_section_documents(stage)
+        _reject_generation_downgrade(seed, version)
 
         # Replace the pre-split pages as a unit. In a container image the old `pages` directory sits in a
         # read-only lower layer and cannot be renamed (EXDEV), so build the new one beside it, delete
@@ -190,14 +241,27 @@ def apply_bundle(seed: Path, base: str) -> str:
     )
 
 
+def apply_bundle(seed: Path, base: str, manifest_url: str | None = None) -> str:
+    seed = Path(seed)
+    seed.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = seed.parent / ".metadata-cache-bundle-fetch.lock"
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            return _apply_bundle_locked(seed, base, manifest_url)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
 def main() -> int:
     base = os.getenv("CACHE_BUNDLE_BASE_URL", DEFAULT_BASE).strip()
+    manifest_url = os.getenv("CACHE_BUNDLE_MANIFEST_URL", DEFAULT_MANIFEST_URL).strip()
     if not base or base.lower() in ("off", "false", "0", "none"):
         print("cache bundle: disabled")
         return 0
     seed = Path(os.getenv("CACHE_SEED_DIR", "/app/cache-seed"))
     try:
-        print("cache bundle:", apply_bundle(seed, base))
+        print("cache bundle:", apply_bundle(seed, base, manifest_url or None))
     except Exception as exc:  # never block startup
         version_path = seed / VERSION_FILE
         installed_version = version_path.read_text(encoding="utf-8").strip() if version_path.is_file() else "baked-in"

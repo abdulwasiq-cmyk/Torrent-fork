@@ -63,6 +63,7 @@ from core.settings import (
     TMDB_READ_ACCESS_TOKENS,
     TMDB_SEARCH_METADATA_CACHE_FILE,
     TMDB_SYNOPSIS_LOOKUP_VERSION,
+    TORRENT_SEARCH_ENABLED,
     WATCHMODE_API_KEYS,
     _CACHE_SEED_DIR,
     data_file,
@@ -543,6 +544,9 @@ def _extra_result_matches_language(item: dict[str, Any], language: str | None) -
 
 
 async def _build_marvel_catalogue() -> None:
+    if not TORRENT_SEARCH_ENABLED:
+        logger.info("Torrent searches disabled; skipped Marvel torrent-catalogue build.")
+        return
     if CACHE_ONLY_MODE:
         logger.info("CACHE_ONLY_MODE: skipped Marvel catalogue build; using bundled snapshot.")
         return
@@ -2088,6 +2092,9 @@ def _extra_item_release_date(item: dict[str, Any]) -> str:
 
 
 async def _build_extra_catalogue(key: str) -> None:
+    if not TORRENT_SEARCH_ENABLED:
+        logger.info("Torrent searches disabled; skipped extra torrent catalogue build for %s", key)
+        return
     if CACHE_ONLY_MODE:
         logger.info("CACHE_ONLY_MODE: skipped build for extra catalogue %s", key)
         return
@@ -2407,6 +2414,8 @@ async def _build_extra_catalogue(key: str) -> None:
 
 
 async def _ensure_extra_catalogue_refresh(key: str) -> None:
+    if not TORRENT_SEARCH_ENABLED:
+        return
     cached = _read_extra_catalogue(key)
     if _extra_catalogue_is_stale(key, cached):
         if time.monotonic() < _extra_catalogue_retry_after.get(key, 0.0):
@@ -2688,6 +2697,28 @@ async def _start_tmdb_catalogue_synopsis_enrichment() -> None:
 @router.get("/api/catalogue/marvel")
 async def api_marvel_catalogue(request: Request, page: int = Query(0, ge=0), page_size: int = Query(0, ge=0, le=200)):
     global _marvel_catalogue_task
+    if not TORRENT_SEARCH_ENABLED:
+        cached = _merge_bundled_marvel_catalogue_cache(_read_marvel_catalogue())
+        if cached:
+            return _page_catalogue_payload({
+                "status": "ready",
+                "builtAt": cached.get("builtAt"),
+                "completed": int(cached.get("titlesQueried") or len(MARVEL_MOVIE_SEARCHES)),
+                "total": int(cached.get("titlesQueried") or len(MARVEL_MOVIE_SEARCHES)),
+                "resultCount": int(cached.get("resultCount") or len(cached["results"])),
+                "movieCount": int(cached.get("movieCount") or 0),
+                "results": cached["results"],
+                "refreshing": False,
+            }, page, page_size, sort_by_release_date=True)
+        return {
+            "status": "disabled",
+            "completed": 0,
+            "total": len(MARVEL_MOVIE_SEARCHES),
+            "resultCount": 0,
+            "movieCount": 0,
+            "refreshing": False,
+            "results": [],
+        }
     if CACHE_ONLY_MODE:
         prebuilt = _prebuilt_catalogue_page(request, "marvel", page, page_size)
         if prebuilt is not None:
@@ -2760,6 +2791,9 @@ async def api_marvel_catalogue(request: Request, page: int = Query(0, ge=0), pag
 
 async def _warm_marvel_catalogue_on_startup() -> None:
     """Keep startup quiet; the Marvel catalogue builds when first requested."""
+    if not TORRENT_SEARCH_ENABLED:
+        logger.info("Torrent searches disabled; skipped Marvel catalogue warm-up.")
+        return
     if _read_marvel_catalogue():
         logger.info("Persistent Marvel catalogue is available; startup warm-up skipped.")
     else:

@@ -50,6 +50,10 @@ else:
 # CACHE_FIRST=false to get the older "expire and refresh" behaviour back. A user-triggered
 # refresh (force=true, "clear TMDB cache") still bypasses the cache on purpose.
 CACHE_FIRST = os.getenv("CACHE_FIRST", "true").strip().casefold() not in {"0", "false", "no", "off"}
+# Provider torrent searches are independently controllable from metadata refreshes.
+TORRENT_SEARCH_ENABLED = os.getenv("TORRENT_SEARCH_ENABLED", "true").strip().casefold() not in {
+    "0", "false", "no", "off",
+}
 _CACHE_FOREVER_SECONDS = 20 * 365 * 24 * 60 * 60
 
 
@@ -70,6 +74,15 @@ BACKFILL_MISSING_METADATA = (
 # One place for the runtime data directory (Render: mount a disk and set APP_DATA_DIR).
 # Individual files can still be overridden with their own environment variable.
 DATA_DIR = Path(os.getenv("APP_DATA_DIR", "/app/data"))
+TORRENT_CACHE_DIR = Path(
+    os.getenv("TORRENT_CACHE_DIR", str(DATA_DIR / "torrent-cache"))
+)
+TORRENT_CACHE_SEED_DIR = Path(
+    os.getenv(
+        "TORRENT_CACHE_SEED_DIR",
+        str(Path(__file__).resolve().parents[1] / "cache-seed"),
+    )
+)
 
 
 def data_file(name: str) -> str:

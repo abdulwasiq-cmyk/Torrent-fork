@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Called by the systemd timers (see install_schedule.sh). One refresh at a time, with a lock.
+# Called by the metadata-only systemd timers (see install_schedule.sh). One refresh at a time, with a lock.
 #   scheduled_refresh.sh <group>                 # run refresh_and_publish.sh <group>
 #   scheduled_refresh.sh --notify-failure <unit> # post a failure message to NOTIFY_WEBHOOK, if set
 set -uo pipefail

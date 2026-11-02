@@ -64,6 +64,13 @@ const FRANCHISE_SECTION_MODES: Record<string, SectionCacheLocation> = {
   classics: { section: 'favourites', subsection: 'movies' },
 };
 
+const ADDITIONAL_TORRENT_MOVIE_SECTIONS: Partial<Record<MovieCatalogueKey, string>> = {
+  'bollywood-library': 'bollywood',
+  'popular-pakistani': 'pakistani',
+  'trending-pakistani': 'pakistani',
+  'latest-pakistani': 'pakistani',
+};
+
 function pageResults<T>(rows: T[], page: number, pageSize: number): T[] {
   const start = (Math.max(1, page) - 1) * pageSize;
   return rows.slice(start, start + pageSize);
@@ -148,6 +155,89 @@ function tvItem(row: SectionCacheRow): TvCatalogueItem {
 
 export function movieCatalogueSection(key: MovieCatalogueKey): SectionCacheLocation | null {
   return MOVIE_CATALOGUE_SECTIONS[key] || null;
+}
+
+export function torrentCacheSectionForMovieCatalogue(key: string | undefined): string | null {
+  if (!key) return null;
+  return MOVIE_CATALOGUE_SECTIONS[key as MovieCatalogueKey]?.section
+    || ADDITIONAL_TORRENT_MOVIE_SECTIONS[key as MovieCatalogueKey]
+    || null;
+}
+
+export function torrentCacheSectionForTvCatalogue(key: string): string | null {
+  return TV_CATALOGUE_SECTIONS[key]?.section || null;
+}
+
+function normalizedTitle(value: string): string {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function torrentCacheRecordsForMedia(
+  document: import('./types.ts').TorrentCacheDocument,
+  media: {
+    id?: number | string | null;
+    tmdbId?: number | string | null;
+    imdbId?: string | null;
+    title: string;
+    year?: number | string | null;
+    mediaType?: 'movie' | 'tv';
+    seasonNumber?: number;
+    episodeNumber?: number;
+  },
+): TorrentSearchResult[] {
+  const mediaType = media.mediaType || 'movie';
+  const stableIds = new Set(
+    [media.tmdbId, media.id, media.imdbId]
+      .filter((value): value is string | number => value != null && String(value).trim() !== '')
+      .map(value => String(value).toLowerCase()),
+  );
+  const title = normalizedTitle(media.title);
+  const year = media.year == null ? '' : String(media.year).slice(0, 4);
+  return document.records
+    .filter(record => {
+      const identities = Array.isArray(record.mediaIdentities) ? record.mediaIdentities : [];
+      return identities.some(identity => {
+        if (identity.mediaType !== mediaType) return false;
+        if (
+          media.seasonNumber != null &&
+          Number(identity.seasonNumber) !== media.seasonNumber
+        ) return false;
+        if (
+          media.episodeNumber != null &&
+          Number(identity.episodeNumber) !== media.episodeNumber
+        ) return false;
+        const identityIds = [identity.tmdbId, identity.imdbId]
+          .filter((value): value is string | number => value != null && String(value).trim() !== '')
+          .map(value => String(value).toLowerCase());
+        if (identityIds.some(value => stableIds.has(value))) return true;
+        const identityYear = identity.year == null ? '' : String(identity.year).slice(0, 4);
+        return normalizedTitle(identity.title) === title && (!year || !identityYear || year === identityYear);
+      });
+    })
+    .map(record => {
+      const identity = record.mediaIdentities?.find(candidate => (
+        candidate.mediaType === mediaType &&
+        normalizedTitle(candidate.title) === title &&
+        (!year || !candidate.year || String(candidate.year).slice(0, 4) === year) &&
+        (media.seasonNumber == null || Number(candidate.seasonNumber) === media.seasonNumber) &&
+        (media.episodeNumber == null || Number(candidate.episodeNumber) === media.episodeNumber)
+      ));
+      return {
+        ...record,
+        mediaTitle: identity?.title || media.title,
+        year: identity?.year ?? media.year ?? record.year,
+        mediaType,
+        ...(identity?.seasonNumber == null ? {} : { seasonNumber: identity.seasonNumber }),
+        ...(identity?.episodeNumber == null ? {} : { episodeNumber: identity.episodeNumber }),
+      };
+    });
 }
 
 export function movieCataloguePageFromSection(

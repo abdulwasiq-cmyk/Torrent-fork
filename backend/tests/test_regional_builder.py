@@ -71,7 +71,7 @@ def test_three_full_pages_of_watchable_titles_with_trending_history():
             {**movie("bw", 70000 + 100 * i + j), "trendingRank": j + 1} for j in range(8)]}} for i, w in enumerate(older)]
         (data / "regional_movie_trending_archive.json").write_text(json.dumps({"version": 1, "weeks": weeks}))
         env = {**os.environ, "HOME_DATA_DIR": str(data), "HOME_API_BASE": f"http://127.0.0.1:{httpd.server_port}",
-               "REGIONAL_CACHE_DELAY_SECONDS": "0"}
+               "REGIONAL_CACHE_DELAY_SECONDS": "0", "REGIONAL_CACHE_TORRENT_SCAN": "true"}
         proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "build_regional_movie_cache.py")],
                               env=env, capture_output=True, text=True, timeout=300)
         assert proc.returncode == 0, proc.stdout[-1500:] + proc.stderr[-1500:]
@@ -116,6 +116,22 @@ def test_torrent_check_is_not_too_strict(monkeypatch=None):
             {"title": "Dhood.2026.CAMRip", "size": 700 * 1024**2, "magnetUrl": "magnet:?x"},
             {"title": "Dhood.2026.tiny", "size": 10 * 1024**2, "magnetUrl": "magnet:?x"}]
     assert [r["title"] for r in b.usable_rows(rows, "Dhood (Sandstorm)")] == ["Dhood.2026.1080p.WEB-DL"]
+
+
+def test_regional_builder_defaults_to_metadata_only(monkeypatch):
+    monkeypatch.delenv("REGIONAL_CACHE_TORRENT_SCAN", raising=False)
+    builder = _builder()
+    assert builder.TORRENT_SCAN is False
+    calls = []
+
+    def forbidden(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("regional metadata build called /api/search")
+
+    monkeypatch.setattr(builder, "request", forbidden)
+    old_details = {"status": "ready", "results": [{"infoHash": "preserve"}]}
+    assert builder.scan_torrents({"title": "Example", "year": 2024}, old_details) is old_details
+    assert calls == []
 
 
 def test_title_stays_unless_it_has_no_torrent_and_its_stream_is_recorded_broken(monkeypatch):

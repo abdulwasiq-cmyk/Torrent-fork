@@ -1,4 +1,5 @@
-import { API_BASE, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
+import { API_BASE, api, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
+import { torrentCacheRecordsForMedia, torrentCacheSectionForMovieCatalogue } from '../../../api/sectionCache.ts';
 import searchLimits from '../../../../search_limits.json';
 import { TorrentQualityGroup, groupTorrentResults, normalizeGroupTitle, torrentGroupReleaseYear, torrentResultKey } from '../grouping.ts';
 import { cataloguePosterSource } from '../cataloguePosters.ts';
@@ -72,7 +73,8 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
     setSelectedQualityByGroup({});
     prepareBuildPendingRef.current = false;
 
-    const cacheKey = normalizeGroupTitle(movie.title) + '|' + String(movie.year || '');
+    const torrentSection = torrentCacheSectionForMovieCatalogue(movieCatalogue?.catalogue);
+    const cacheKey = (torrentSection || 'legacy') + '|' + normalizeGroupTitle(movie.title) + '|' + String(movie.year || '');
     const cachedDetails = movieTorrentDetailsCacheRef.current.get(cacheKey);
     const persistedDetails = cachedDetails || readLocalCache<{ groups: TorrentQualityGroup[]; savedAt: number }>(MOVIE_TORRENT_CACHE_STORAGE_KEY, cacheKey);
     if (persistedDetails && Date.now() - persistedDetails.savedAt < MOVIE_TORRENT_CACHE_TTL_MS) {
@@ -124,11 +126,24 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
     }
 
     try {
+      let data: TorrentSearchResult[] | null = null;
+      if (torrentSection) {
+        try {
+          const cachedDocument = await api.getTorrentSectionCache(torrentSection);
+          const cachedRecords = torrentCacheRecordsForMedia(cachedDocument, movie);
+          if (cachedRecords.length > 0) data = cachedRecords;
+        } catch (cacheError) {
+          console.warn('[PREPARE_TRACE] section torrent cache unavailable', {
+            section: torrentSection,
+            error: String(cacheError),
+          });
+        }
+      }
       const embeddedMatches = [
         ...(Array.isArray(movie.torrentMatches) ? movie.torrentMatches : []),
         ...(movie.torrentMatch ? [movie.torrentMatch] : []),
       ];
-      let data: TorrentSearchResult[] | null = embeddedMatches
+      if (!data) data = embeddedMatches
         .filter(match => Boolean(match && (match.magnetUrl || match.infoHash || match.infoUrl)))
         .map((match, index): TorrentSearchResult => ({
           guid: String(match.infoHash || match.magnetUrl || match.infoUrl || movie.title + '-' + index),
@@ -146,11 +161,11 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
           posterUrl: movie.posterUrl,
           quality: '',
         }));
-      if (data.length === 0) data = null;
+      if (data?.length === 0) data = null;
 
-      // Prefer the movie's bundled torrent matches; query the shared VPS snapshot
-      // only when this catalogue row does not already include a release.
-      if (!data) {
+      // The old regional endpoint is a cache-only compatibility fallback for
+      // regional sections; it is never used for empty non-regional sections.
+      if (!data && (!torrentSection || ['hollywood', 'bollywood'].includes(torrentSection))) {
         try {
           const params = new URLSearchParams({ title: movie.title, year: String(movie.year || '') });
           console.info('[PREPARE_TRACE]', JSON.stringify({

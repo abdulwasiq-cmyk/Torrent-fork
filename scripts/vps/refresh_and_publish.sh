@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run on the VPS (cron). Refreshes cache data, publishes ONE bundle to a rolling GitHub
-# release (old asset replaced, so GitHub never accumulates history), then asks Render to restart.
+# Run on the VPS (cron). Refreshes metadata only, publishes the metadata bundle, then asks
+# Render to restart. Torrent refresh and publication use refresh_torrents_and_publish.sh.
 #
 #   refresh_and_publish.sh hollywood-bollywood     # weekly
 #   refresh_and_publish.sh franchise               # when you want Marvel/DC/classics updated
@@ -15,16 +15,28 @@
 set -euo pipefail
 # Everything runs inside a function so that `git pull` replacing this file mid-run is harmless.
 main() {
-GROUP="${1:?usage: $0 hollywood-bollywood|franchise|classics|tv-imdb|imdb-dataset|episode-metadata|publish-only}"
+GROUP="${1:?usage: $0 hollywood-bollywood|regional-tv-new|franchise|classics|tv-imdb|imdb-dataset|episode-metadata|publish-only}"
+case "$GROUP" in
+  hollywood-bollywood|regional-tv-new|franchise|classics|tv-imdb|imdb-dataset|episode-metadata|publish-only) ;;
+  *) echo "Unsupported metadata refresh group: $GROUP" >&2; exit 2 ;;
+esac
 REPO="wroxtaaar/Torrent-Studio"
 HOME_DIR="${TS_HOME:-$HOME/torrent-studio-refresh}"
 mkdir -p "$HOME_DIR"; cd "$HOME_DIR"
+exec 8>"$HOME_DIR/.metadata-refresh.lock"
+if ! flock -n 8; then
+  echo "Another metadata refresh or publication is already running." >&2
+  exit 3
+fi
 if [ ! -d repo/.git ]; then git clone --depth 1 "https://github.com/$REPO.git" repo; fi
 # fetch + reset (not pull): a plain pull fails on a shallow clone with "Cannot fast-forward to multiple branches"
 git -C repo fetch -q --depth 1 origin main
 git -C repo reset -q --hard FETCH_HEAD
 # Load keys (repeated TMDB_READ_ACCESS_TOKEN lines are all kept, not just the last one).
 eval "$(python3 repo/scripts/vps/load_env.py "$HOME/.config/torrent-studio/env")"
+# Metadata refresh subprocesses fail closed for all torrent-provider search paths.
+export TORRENT_SEARCH_ENABLED=false
+export REGIONAL_CACHE_TORRENT_SCAN=false
 [ -d venv ] || python3 -m venv venv
 ./venv/bin/pip install -q -r repo/backend/requirements.txt
 
@@ -40,7 +52,7 @@ if [ "$GROUP" != "publish-only" ]; then
       --allow-live-tmdb \
       --allow-live-anilist
   else
-    ./venv/bin/python repo/scripts/refresh_seed.py "$GROUP"
+    METADATA_REFRESH_LOCK_HELD=1 ./venv/bin/python repo/scripts/refresh_seed.py "$GROUP"
   fi
 fi
 
@@ -58,9 +70,11 @@ fi
 
 rm -rf out; ./venv/bin/python repo/scripts/make_cache_bundle.py "$REFRESH_SEED_DIR" out
 
-gh release view cache-data -R "$REPO" >/dev/null 2>&1 || \
+if ! gh release view cache-data -R "$REPO" >/dev/null 2>&1; then
   gh release create cache-data -R "$REPO" --title "Cache data (rolling)" \
-    --notes "Rolling cache manifest with immutable, versioned cache bundle assets."
+    --notes "Independent metadata and torrent manifests with immutable, versioned bundles." || \
+    gh release view cache-data -R "$REPO" >/dev/null
+fi
 # The publisher reads the exact bundle filename from the manifest, verifies its checksum and
 # release presence, then updates the legacy asset and manifest in that order.
 ./venv/bin/python repo/scripts/publish_cache_bundle.py \

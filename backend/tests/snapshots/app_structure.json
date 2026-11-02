@@ -397,6 +397,13 @@
     [
      "GET"
     ],
+    "/api/sections/{section}/torrents",
+    "api_get_torrent_cache"
+   ],
+   [
+    [
+     "GET"
+    ],
     "/api/catalogue/ott/search",
     "api_search_saved_ott"
    ],
@@ -1150,6 +1157,13 @@
     ],
     "/api/sections/{section}",
     "api_get_section_cache"
+   ],
+   [
+    [
+     "GET"
+    ],
+    "/api/sections/{section}/torrents",
+    "api_get_torrent_cache"
    ],
    [
     [

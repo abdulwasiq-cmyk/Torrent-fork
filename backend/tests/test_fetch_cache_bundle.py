@@ -109,6 +109,50 @@ def test_installs_bundle_and_replaces_pages_and_cache_busts_requests(tmp_path, s
     assert parse_qs(bundle_request.query).get("version") == ["v1"]
 
 
+def test_metadata_pointer_can_be_fetched_separately_from_archive_base(tmp_path, server):
+    root, base, requests = server
+    make_bundle(root, {"marvel_catalogue.json": b'{"value": 1}'}, version="v1")
+    (root / "metadata-pointer.json").write_bytes((root / "cache-bundle.json").read_bytes())
+    seed = seed_dir(tmp_path)
+
+    fcb.apply_bundle(seed, base, f"{base}/metadata-pointer.json")
+
+    assert urlsplit(requests[0]).path.endswith("/metadata-pointer.json")
+    assert urlsplit(requests[1]).path.endswith("/cache-bundle-v1.tar.gz")
+
+
+def test_metadata_bundle_does_not_replace_torrent_cache_artifacts(tmp_path, server):
+    root, base, _requests = server
+    torrent_bytes = b'{"section":"hollywood","records":[{"identity":"new"}]}'
+    torrent_manifest_bytes = b'{"generation":999}'
+    make_bundle(
+        root,
+        {
+            "hollywood-torrents.json": torrent_bytes,
+            "torrent-cache-manifest.json": torrent_manifest_bytes,
+            "torrent-cache-bundle.json": b'{"generation":999}',
+            "torrent-cache-bundle-999-deadbeef.tar.gz": b"not a metadata asset",
+        },
+        version="torrent-mixed",
+    )
+    seed = seed_dir(tmp_path)
+    existing_torrent = seed / "hollywood-torrents.json"
+    existing_torrent.write_bytes(b'{"section":"hollywood","records":[{"identity":"persistent"}]}')
+    existing_manifest = seed / "torrent-cache-manifest.json"
+    existing_manifest.write_bytes(b'{"generation":5}')
+    existing_pointer = seed / "torrent-cache-bundle.json"
+    existing_pointer.write_bytes(b'{"generation":5}')
+
+    fcb.apply_bundle(seed, base)
+
+    assert existing_torrent.read_bytes() == (
+        b'{"section":"hollywood","records":[{"identity":"persistent"}]}'
+    )
+    assert existing_manifest.read_bytes() == b'{"generation":5}'
+    assert existing_pointer.read_bytes() == b'{"generation":5}'
+    assert not (seed / "torrent-cache-bundle-999-deadbeef.tar.gz").exists()
+
+
 def test_stale_or_mismatched_bundle_is_rejected_without_changing_seed(tmp_path, server):
     root, base, _requests = server
     make_bundle(root, {"marvel_catalogue.json": b'{"new": 1}'}, sha="0" * 64)
@@ -131,6 +175,32 @@ def test_stale_or_mismatched_bundle_is_rejected_without_changing_seed(tmp_path, 
     assert not (seed / fcb.VERSION_FILE).exists()
 
 
+def test_stale_metadata_generation_cannot_replace_newer_installed_marker(tmp_path, server):
+    root, base, _requests = server
+    make_bundle(root, {"marvel_catalogue.json": b'{"stale": true}'}, version="v1")
+    seed = seed_dir(tmp_path)
+    (seed / fcb.VERSION_FILE).write_text("v2", encoding="utf-8")
+    before = (seed / "marvel.json").read_bytes()
+
+    with pytest.raises(ValueError, match="Refusing stale metadata generation"):
+        fcb.apply_bundle(seed, base)
+
+    assert (seed / fcb.VERSION_FILE).read_text() == "v2"
+    assert (seed / "marvel.json").read_bytes() == before
+
+
+def test_newer_metadata_generation_advances_the_marker(tmp_path, server):
+    root, base, _requests = server
+    make_bundle(root, {"marvel_catalogue.json": b'{"newer": true}'}, version="v3")
+    seed = seed_dir(tmp_path)
+    (seed / fcb.VERSION_FILE).write_text("v2", encoding="utf-8")
+
+    result = fcb.apply_bundle(seed, base)
+
+    assert "installed_version=v3" in result
+    assert (seed / fcb.VERSION_FILE).read_text() == "v3"
+
+
 def test_corrupt_json_and_unsafe_paths_rejected(tmp_path, server):
     root, base, _requests = server
     seed = seed_dir(tmp_path)
@@ -146,6 +216,7 @@ def test_corrupt_json_and_unsafe_paths_rejected(tmp_path, server):
 
 def test_main_never_raises_when_unreachable(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("CACHE_BUNDLE_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("CACHE_BUNDLE_MANIFEST_URL", "http://127.0.0.1:9/cache-bundle.json")
     monkeypatch.setenv("CACHE_SEED_DIR", str(seed_dir(tmp_path)))
     assert fcb.main() == 0
     assert "skipped" in capsys.readouterr().out
@@ -220,7 +291,7 @@ def test_bundle_with_invalid_section_document_is_rejected_before_install(tmp_pat
     assert not (seed / fcb.VERSION_FILE).exists()
 
 
-def test_cache_publisher_uploads_immutable_bundle_before_replacing_manifest():
+def test_cache_publisher_advances_metadata_pointer_only_after_immutable_asset():
     publisher = (ROOT / "scripts/vps/refresh_and_publish.sh").read_text(encoding="utf-8")
     publish_helper = (ROOT / "scripts/publish_cache_bundle.py").read_text(encoding="utf-8")
     publisher_call = publisher.index("repo/scripts/publish_cache_bundle.py")
@@ -229,4 +300,6 @@ def test_cache_publisher_uploads_immutable_bundle_before_replacing_manifest():
     assert publisher_call < deploy_hook
     assert 'asset_name = manifest["bundle"]' in publish_helper
     assert 'str(immutable_bundle)' in publish_helper
-    assert "required_names = {manifest_path.name, legacy_bundle_path.name, asset_name}" in publish_helper
+    assert "advance_pointer(" in publish_helper
+    assert "POINTER_PATH = \"cache-bundles/metadata.json\"" in publish_helper
+    assert "legacy_bundle_path.name" not in publish_helper

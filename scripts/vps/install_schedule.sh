@@ -4,11 +4,14 @@
 #   bash scripts/vps/install_schedule.sh              # install / update
 #   bash scripts/vps/install_schedule.sh --remove     # remove the timers
 #
-# What runs, as the current user (nothing opens a port; the VPS only makes outbound calls):
+# Metadata-only schedules, as the current user (no torrent provider searches):
 #   weekly  Monday 03:00     refresh_and_publish.sh hollywood-bollywood
 #   monthly 1st      04:00   refresh_and_publish.sh franchise     (Marvel, DC and classics)
-# Each run refreshes the data, publishes one bundle and triggers a Render deploy, exactly like running
+# Each run refreshes metadata, publishes only metadata artifacts and triggers a Render deploy, exactly like running
 # the script by hand. A missed run (VPS was off) happens at next boot. Runs never overlap (flock).
+#
+# Torrent refresh is intentionally not scheduled here. See the separate
+# scripts/vps/refresh_torrents_and_publish.sh entry point; no torrent timer is installed.
 #
 # Optional: put NOTIFY_WEBHOOK=<Discord/Slack-style webhook URL> in ~/.config/torrent-studio/env
 # to get a message when a run fails.

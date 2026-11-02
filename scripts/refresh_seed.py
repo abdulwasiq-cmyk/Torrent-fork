@@ -35,14 +35,11 @@ GROUPS = {
     "tv-imdb": {"top": [], "runtime": ["imdb_rating_cache.json"]},   # only the OMDb ratings for web series/anime
     "imdb-dataset": {"top": [], "runtime": ["imdb_rating_cache.json"]},   # only IMDb ratings from the free dataset
     "classics": {
-        "top": ["classics_catalogue.json", "classics_web_series_tv_catalogue.json", "classics_anime_tv_catalogue.json"],
+        "top": ["classics_web_series_tv_catalogue.json", "classics_anime_tv_catalogue.json"],
         "runtime": SHARED_RUNTIME,
     },
     "franchise": {
         "top": [
-            "marvel_catalogue.json", "marvel_hindi_catalogue.json", "marvel_web_series_catalogue.json",
-            "dc_live_action_catalogue.json", "dc_live_action_hindi_catalogue.json",
-            "dc_animated_catalogue.json", "classics_catalogue.json",
             "classics_web_series_tv_catalogue.json", "classics_anime_tv_catalogue.json",
         ],
         "runtime": SHARED_RUNTIME + ["marvel_tv_catalogue_cache.json", "dc_tv_catalogue_cache.json"],
@@ -192,7 +189,7 @@ def warm_imdb_dataset(env):
 
 
 def refresh_classics(env):
-    """Quick run for the Classics lists only (minutes, not hours)."""
+    """Refresh Classics metadata only; torrent catalogues use the separate workflow."""
     run([sys.executable, "maintenance/rebuild_classics.py"], env, cwd=BACKEND)
     run([sys.executable, "maintenance/refresh_franchise_ott.py", "--region", "IN"], env, cwd=BACKEND)
     warm_imdb_dataset(env)
@@ -200,7 +197,7 @@ def refresh_classics(env):
 
 
 def refresh_franchise(env, data_dir):
-    # Titles added to the Classics lists get searched/resolved first; everything already stored is kept.
+    # Classics TV metadata is refreshed here; movie torrent discovery is independent.
     run([sys.executable, "maintenance/rebuild_classics.py"], env, cwd=BACKEND)
     run([sys.executable, "maintenance/refresh_franchise_ott.py", "--region", "IN"], env, cwd=BACKEND)
     run([sys.executable, "-c",
@@ -218,10 +215,7 @@ def valid_json(path: Path) -> bool:
         return False
 
 
-def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in GROUPS:
-        raise SystemExit(__doc__)
-    group = sys.argv[1]
+def _run_group(group: str) -> None:
     if not any(k.startswith("TMDB_") and v.strip() for k, v in os.environ.items()):
         raise SystemExit("No TMDB key in the environment; refusing to run (nothing would be refreshed).")
     with tempfile.TemporaryDirectory(prefix="seed-refresh-") as tmp:
@@ -235,6 +229,8 @@ def main():
             "CACHE_ONLY_MODE": "false",
             "CACHE_FIRST": "false",  # stale entries must really be refreshed here
             "BACKFILL_MISSING_METADATA": "true",
+            "TORRENT_SEARCH_ENABLED": "false",
+            "REGIONAL_CACHE_TORRENT_SCAN": "false",
             "PYTHONPATH": str(BACKEND),
         }
         if group == "imdb-dataset":
@@ -262,6 +258,30 @@ def main():
                 shutil.copy2(new, old)
                 changed.append(str((old).relative_to(SEED)))
         print("CHANGED:", json.dumps(changed))
+
+
+def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in GROUPS:
+        raise SystemExit(__doc__)
+    lock_held = os.getenv("METADATA_REFRESH_LOCK_HELD", "").strip().casefold() in {
+        "1", "true", "yes", "on",
+    }
+    lock_handle = None
+    if not lock_held:
+        import fcntl
+
+        lock_path = SEED.parent / ".metadata-refresh.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_handle = lock_path.open("a+b")
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+    try:
+        _run_group(sys.argv[1])
+    finally:
+        if lock_handle is not None:
+            import fcntl
+
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+            lock_handle.close()
 
 
 if __name__ == "__main__":

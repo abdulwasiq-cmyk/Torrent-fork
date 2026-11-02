@@ -34,13 +34,9 @@ export PYTHONUNBUFFERED=1
 echo "Checking existing API at $API_BASE ..."
 curl --fail --silent --show-error "$API_BASE/api/health" >/dev/null
 
-echo "Migrating existing Hollywood torrent records first (no provider searches)..."
-"$HOME_DIR/venv/bin/python" "$REPO_DIR/scripts/build_hollywood_torrent_cache.py" "$MODE"
-echo
 echo "Building Hollywood metadata cache separately..."
 "$HOME_DIR/venv/bin/python" "$REPO_DIR/scripts/build_hollywood_section_cache.py" "$MODE"
 
 echo
-echo "Hollywood cache build finished. No torrent searches, publishing, deployment, or restart was performed."
+echo "Hollywood metadata build finished. No torrent searches, publishing, deployment, or restart was performed."
 echo "Metadata: $SEED_DIR/hollywood.json"
-echo "Torrents: $SEED_DIR/hollywood-torrents.json"

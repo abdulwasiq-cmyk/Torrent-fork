@@ -1,9 +1,54 @@
-import type { TorrentSearchResult, MarvelCatalogueResponse, TvCataloguePage, MovieCatalogueKey, SearchMediaMetadata, SearchMediaMetadataResponse, ImdbRatingResult, MovieCataloguePage, MovieOttAvailability, SectionCacheDocument } from './types.ts';
+import type { TorrentCacheDocument, TorrentSearchResult, MarvelCatalogueResponse, TvCataloguePage, MovieCatalogueKey, SearchMediaMetadata, SearchMediaMetadataResponse, ImdbRatingResult, MovieCataloguePage, MovieOttAvailability, SectionCacheDocument } from './types.ts';
 import { API_BASE, apiFetch } from './http.ts';
 
 const sectionCacheRequests = new Map<string, Promise<SectionCacheDocument>>();
+const torrentSectionCacheRequests = new Map<string, Promise<TorrentCacheDocument>>();
 
 export const searchApi = {
+  async getTorrentSectionCache(section: string): Promise<TorrentCacheDocument> {
+    const key = String(section || '').trim().toLowerCase();
+    const existing = torrentSectionCacheRequests.get(key);
+    if (existing) return existing;
+    const request = (async () => {
+      const res = await apiFetch(
+        '/api/sections/' + encodeURIComponent(key) + '/torrents',
+        { cache: 'no-store' },
+      );
+      const body = await res.text();
+      let data: unknown;
+      try {
+        data = body ? JSON.parse(body) : null;
+      } catch {
+        throw new Error('Torrent section cache response is not valid JSON.');
+      }
+      const record = data && typeof data === 'object' && !Array.isArray(data)
+        ? data as Record<string, unknown>
+        : null;
+      if (!res.ok) {
+        const detail = typeof record?.detail === 'string' ? record.detail : '';
+        throw new Error(detail || body || ('Torrent section cache failed (HTTP ' + res.status + ')'));
+      }
+      if (
+        !record ||
+        record.schemaVersion !== 1 ||
+        record.section !== key ||
+        !Array.isArray(record.records)
+      ) {
+        throw new Error('Torrent section cache response has an invalid document shape.');
+      }
+      return record as unknown as TorrentCacheDocument;
+    })();
+    torrentSectionCacheRequests.set(key, request);
+    try {
+      return await request;
+    } catch (error) {
+      if (torrentSectionCacheRequests.get(key) === request) {
+        torrentSectionCacheRequests.delete(key);
+      }
+      throw error;
+    }
+  },
+
   async getSectionCache(section: string): Promise<SectionCacheDocument> {
     const key = String(section || '').trim().toLowerCase();
     const existing = sectionCacheRequests.get(key);
