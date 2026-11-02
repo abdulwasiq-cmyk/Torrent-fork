@@ -172,9 +172,10 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                 const group = movieTorrentPreviewGroup;
                 const selectedKey = selectedMovieTorrentQualityByGroup[group.key] || torrentResultKey(group.variants[0]);
                 const result = group.variants.find(variant => torrentResultKey(variant) === selectedKey) || group.variants[0];
-                const source = result.magnetUrl || result.downloadUrl || result.sourceUrl;
-                const torrentKey = result.infoHash || source || result.title;
-                const isPreparing = preparingTorrentKey === torrentKey;
+                const prepareState = prepareStateFor(result);
+                const source = prepareState.source;
+                const torrentKey = prepareState.torrentKey;
+                const isPreparing = prepareState.isPreparing;
                 const preparedFiles = preparedForResult(result);
                 const primaryFile = preparedFiles.find(file => /\\.(mkv|mp4|m4v|webm|mov|avi|m3u8|ts|mp3|wav|flac|aac|ogg|m4a)$/i.test(file.name)) || preparedFiles[0];
                 const qualityLabel = torrentQualityDetails(result).label;

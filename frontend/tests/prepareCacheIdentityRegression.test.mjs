@@ -73,6 +73,10 @@ test('migrated Avengers movie card resolves cached Marvel results into an enable
     new URL('src/components/torrent-search/sections/MovieCatalogueSection.tsx', root),
     'utf8',
   );
+  const searchResultsSection = await readFile(
+    new URL('src/components/torrent-search/sections/SearchResultsSection.tsx', root),
+    'utf8',
+  );
   const movie = metadata.subsections.movies.results.find(
     row => String(row.tmdbId ?? row.id) === '299534',
   );
@@ -100,8 +104,30 @@ test('migrated Avengers movie card resolves cached Marvel results into an enable
   assert.equal(matches[0].sectionCacheRecord, true);
   assert.equal(filterResults(matches).length, matches.length);
   assert.match(catalogueSection, /disabled:\s*!prepareState\.source\s*\|\|\s*prepareState\.isPreparing/);
+  assert.match(searchResultsSection, /const prepareState = prepareStateFor\(result\);/);
+  assert.match(searchResultsSection, /const source = prepareState\.source;/);
   const isPreparing = false;
   assert.equal(!selectedSource || isPreparing, false);
+});
+
+test('The Punisher: One Last Kill resolves to usable cached Marvel torrent sources', async () => {
+  const document = JSON.parse(await readFile(
+    new URL('../backend/cache-seed/marvel-torrents.json', root),
+    'utf8',
+  ));
+  const matches = sectionCache.torrentCacheRecordsForMedia(document, {
+    id: 1439930,
+    tmdbId: 1439930,
+    title: 'The Punisher: One Last Kill',
+    year: 2026,
+    mediaType: 'movie',
+  });
+
+  assert.ok(matches.length > 0);
+  assert.ok(matches.every(record =>
+    record.sectionCacheRecord === true &&
+    Boolean(record.magnetUrl || record.downloadUrl || record.infoHash || record.infoUrl)
+  ));
 });
 
 for (const [catalogue, section] of sectionCatalogues) {
