@@ -302,10 +302,15 @@ export function filterUsableTorrentResults(
     );
     if (!titleMatches) return false;
 
+    // Cached torrent records are keyed by infoHash. Prepare can construct a
+    // magnet URI from that hash, or resolve infoUrl through the selected indexer.
+    // Treat both as valid sources just like an explicit magnet/download URL.
     const hasSource = Boolean(
       String(result.magnetUrl || '').trim() ||
       String(result.downloadUrl || '').trim() ||
-      String(result.sourceUrl || '').trim()
+      String(result.sourceUrl || '').trim() ||
+      String(result.infoHash || '').trim() ||
+      String(result.infoUrl || '').trim()
     );
     if (!hasSource) return false;
     if (isSectionCacheRecord) return true;
