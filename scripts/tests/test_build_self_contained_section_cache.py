@@ -437,10 +437,7 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                 if call[:3] == ["gh", "release", "upload"] and "--clobber" not in call
             )
             self.assertEqual(Path(immutable_upload[4]).name, manifest["bundle"])
-            self.assertEqual(
-                uploaded_assets,
-                {manifest["bundle"], "cache-bundle.tar.gz", "cache-bundle.json"},
-            )
+            self.assertEqual(uploaded_assets, {manifest["bundle"]})
 
     def test_publisher_uploads_the_exact_filename_named_by_generated_manifest(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -496,22 +493,11 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
             ]
             self.assertEqual(len(immutable_uploads), 1)
             self.assertEqual(Path(immutable_uploads[0][4]).name, archive_name)
+            self.assertEqual(result, {archive_name})
             self.assertEqual(
-                result,
-                {archive_name, "cache-bundle.tar.gz", "cache-bundle.json"},
+                [Path(call[4]).name for call in calls if call[:3] == ["gh", "release", "upload"]],
+                [archive_name],
             )
-            legacy_index = next(
-                i for i, call in enumerate(calls)
-                if call[:3] == ["gh", "release", "upload"]
-                and Path(call[4]).name == "cache-bundle.tar.gz"
-            )
-            manifest_index = next(
-                i for i, call in enumerate(calls)
-                if call[:3] == ["gh", "release", "upload"]
-                and Path(call[4]).name == "cache-bundle.json"
-            )
-            self.assertLess(calls.index(immutable_uploads[0]), legacy_index)
-            self.assertLess(legacy_index, manifest_index)
 
     def test_failed_imdb_cache_result_does_not_replace_good_values(self):
         row = {
