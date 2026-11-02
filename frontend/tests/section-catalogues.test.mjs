@@ -26,6 +26,10 @@ const [sectionCache, grouping] = await Promise.all([
   loadTypeScriptModule(resolve(frontendRoot, 'src/api/sectionCache.ts')),
   loadTypeScriptModule(resolve(frontendRoot, 'src/components/torrent-search/grouping.ts')),
 ]);
+const searchRunnerSource = await readFile(
+  resolve(frontendRoot, 'src/components/torrent-search/state/useSearchRunner.ts'),
+  'utf8',
+);
 const searchApiBundle = await build({
   entryPoints: [resolve(frontendRoot, 'src/api/search.ts')],
   bundle: true,
@@ -45,6 +49,14 @@ const catalogues = [
   { mode: 'dc-animated', section: 'dc', subsection: 'animated', records: 59 },
   { mode: 'classics', section: 'favourites', subsection: 'movies', records: 75 },
 ];
+
+test('cached franchise searches join torrent rows before building result cards', () => {
+  assert.match(searchRunnerSource, /api\.getTorrentSectionCache\(sectionLocation\.section\)/);
+  assert.match(
+    searchRunnerSource,
+    /franchiseRowsFromSection\(\s*document,\s*sectionLocation\.subsection,\s*torrentDocument,\s*\)/,
+  );
+});
 
 test('franchise movie catalogues load section records through the card-rendering pipeline', async t => {
   const documents = new Map();

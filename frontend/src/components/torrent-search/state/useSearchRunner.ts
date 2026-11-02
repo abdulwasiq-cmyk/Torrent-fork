@@ -197,7 +197,20 @@ export function useSearchRunner({ setFranchiseGridPage, setActiveFranchiseSearch
           const { location: sectionLocation, document } = sectionCache;
           if (generation !== searchGenerationRef.current || controller.signal.aborted) return;
           const subsection = document.subsections[sectionLocation.subsection];
-          const allResults = franchiseRowsFromSection(document, sectionLocation.subsection);
+          let torrentDocument: Awaited<ReturnType<typeof api.getTorrentSectionCache>> | undefined;
+          try {
+            torrentDocument = await api.getTorrentSectionCache(sectionLocation.section);
+          } catch (torrentCacheError) {
+            console.warn('[PREPARE_TRACE] section torrent cache unavailable', {
+              section: sectionLocation.section,
+              error: String(torrentCacheError),
+            });
+          }
+          const allResults = franchiseRowsFromSection(
+            document,
+            sectionLocation.subsection,
+            torrentDocument,
+          );
           if (!subsection || !allResults) {
             throw new Error('The requested subsection is missing from its section cache.');
           }
