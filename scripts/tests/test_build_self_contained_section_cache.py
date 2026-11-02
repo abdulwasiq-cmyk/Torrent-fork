@@ -417,6 +417,12 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                         stdout="".join(f"{name}\n" for name in sorted(release_assets)),
                         stderr="",
                     )
+                if command[:3] == ["gh", "release", "download"]:
+                    asset_name = command[command.index("--pattern") + 1]
+                    target_dir = Path(command[command.index("--dir") + 1])
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    (target_dir / asset_name).write_bytes((output / asset_name).read_bytes())
+                    return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(f"Unexpected publisher command: {command}")
 
             with patch.object(PUBLISH_MODULE, "advance_pointer", return_value="test-commit"):
@@ -468,6 +474,12 @@ class SelfContainedSectionCacheTests(unittest.TestCase):
                         stdout="".join(f"{name}\n" for name in sorted(release_assets)),
                         stderr="",
                     )
+                if command[:3] == ["gh", "release", "download"]:
+                    asset_name = command[command.index("--pattern") + 1]
+                    target_dir = Path(command[command.index("--dir") + 1])
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    (target_dir / asset_name).write_bytes((output / asset_name).read_bytes())
+                    return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(f"Unexpected publisher command: {command}")
 
             with patch.object(PUBLISH_MODULE, "advance_pointer", return_value="test-commit"):
