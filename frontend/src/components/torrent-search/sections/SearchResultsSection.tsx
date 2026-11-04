@@ -123,14 +123,17 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
               {dcWebSeriesError && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">{dcWebSeriesError}</div>}
               {dcWebSeriesCatalogue && (
                 <>
-                  <div className="px-1 text-xs text-slate-400">{dcWebSeriesCatalogue.totalResults.toLocaleString()} DC web series · Page {dcWebSeriesCatalogue.page} of {dcWebSeriesCatalogue.totalPages.toLocaleString()} · Metadata by TMDB</div>
-                  {renderDcWebSeriesPagination()}
+                  <div className="px-1 text-xs text-slate-400">{dcWebSeriesCatalogue.totalResults.toLocaleString()} DC web series · Metadata by TMDB</div>
+                  {renderFranchisePagination(dcWebSeriesCatalogue.results.length)}
                   <div className="grid grid-cols-2 items-stretch gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 lg:gap-4">
-                    {dcWebSeriesCatalogue.results.map(show => (
+                    {[...dcWebSeriesCatalogue.results]
+                      .sort(classicsComparator(classicsSort, show => releaseDateSortValue(show), show => ratingValue(imdbRatingsByKey[imdbRatingKey(show.title, show.year, 'tv')]), show => String(show.title || '')))
+                      .slice((franchiseGridPage - 1) * franchiseGridPageSize, franchiseGridPage * franchiseGridPageSize)
+                      .map(show => (
                       <TvShowCard key={String(show.id)} show={show} imdb={imdbRatingsByKey[imdbRatingKey(show.title, show.year, 'tv')]} onOpen={() => playCatalogueTvWithNexStream(show)} />
                     ))}
                   </div>
-                  {renderDcWebSeriesPagination()}
+                  {renderFranchisePagination(dcWebSeriesCatalogue.results.length)}
                 </>
               )}
             </div>

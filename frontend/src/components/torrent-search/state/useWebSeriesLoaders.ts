@@ -110,7 +110,31 @@ export function useWebSeriesLoaders({
     setCatalogueExpectedTitles(0);
     setDcWebSeriesCatalogue(null);
     setDcWebSeriesError('');
-    await loadDcWebSeriesPage(1);
+    // Fetch every page up front, like Marvel and Classics, so the Sort buttons order the
+    // whole section and the page buttons slice the sorted list.
+    const generation = searchGenerationRef.current;
+    const requestGeneration = ++dcWebSeriesRequestGenerationRef.current;
+    setDcWebSeriesLoading(true);
+    try {
+      const firstPage = await loadTvCataloguePage('dc-live-action', 1);
+      const allResults = [...firstPage.results];
+      for (let page = 2; page <= Math.min(firstPage.totalPages, 500); page += 1) {
+        if (generation !== searchGenerationRef.current || requestGeneration !== dcWebSeriesRequestGenerationRef.current) return;
+        const nextPage = await loadTvCataloguePage('dc-live-action', page);
+        for (const show of nextPage.results) {
+          if (!allResults.some(existing => String(existing.id) === String(show.id))) allResults.push(show);
+        }
+      }
+      if (generation === searchGenerationRef.current && requestGeneration === dcWebSeriesRequestGenerationRef.current) {
+        setDcWebSeriesCatalogue({ ...firstPage, page: firstPage.totalPages, results: allResults });
+      }
+    } catch (error: any) {
+      if (generation === searchGenerationRef.current && requestGeneration === dcWebSeriesRequestGenerationRef.current) {
+        setDcWebSeriesError(String(error?.message || 'Could not load DC web series.'));
+      }
+    } finally {
+      if (requestGeneration === dcWebSeriesRequestGenerationRef.current) setDcWebSeriesLoading(false);
+    }
   };
   const loadClassicsTvCatalogue = async (catalogueKey: 'classics-web-series' | 'classics-anime', tab: 'web-series' | 'anime') => {
     setClassicsContentTab(tab);
