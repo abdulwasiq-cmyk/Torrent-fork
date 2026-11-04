@@ -1,5 +1,5 @@
 /**
- * SeedFlow - Cloud Torrent & Media Streaming Application
+ * Torrent Studio - Cloud Torrent & Media Streaming Application
  * Seedr-style webapp with qBittorrent WebAPI v2 orchestration,
  * unlimited server storage, HTTP range streaming, and selective downloads.
  */

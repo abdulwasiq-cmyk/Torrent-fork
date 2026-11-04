@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: new-test
+    name: torrent-studio
     runtime: docker
     repo: https://github.com/wroxtaaar/Torrent-Studio
     branch: main
@@ -40,4 +40,4 @@ services:
       - key: GITHUB_FEEDBACK_TOKEN
         sync: false
       - key: GITHUB_FEEDBACK_REPO
-        value: wroxtaaar/new-test
+        value: wroxtaaar/Torrent-Studio

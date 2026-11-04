@@ -64,7 +64,7 @@ export const AddMagnetModal: React.FC<AddMagnetModalProps> = (props) => {
               </p>
               <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
                 {isInspecting
-                  ? 'You can keep using SeedFlow. The torrent remains safely paused while qBittorrent resolves its metadata.'
+                  ? 'You can keep using Torrent Studio. The torrent remains safely paused while qBittorrent resolves its metadata.'
                   : ready
                   ? `${inspectedFiles.length} file${inspectedFiles.length === 1 ? '' : 's'} found. Open the selector when you're ready.`
                   : error}

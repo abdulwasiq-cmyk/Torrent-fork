@@ -42,7 +42,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     setPushStatus(result);
     if (result === 'granted') {
       dispatchBrowserNotification(
-        'SeedFlow Push Notifications Enabled',
+        'Torrent Studio Push Notifications Enabled',
         'You will now receive instant push alerts whenever cloud torrent downloads finish!'
       );
     }

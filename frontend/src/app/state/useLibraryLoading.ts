@@ -32,7 +32,7 @@ export function useLibraryLoading({ setUsers, setActiveUser, setStorageStats, se
       setNotifications(notifs);
       setCleanupSettings(cleanup);
     } catch (e) {
-      console.error('Failed to load initial seedflow metadata:', e);
+      console.error('Failed to load initial library metadata:', e);
     }
   }, []);
   useEffect(() => {

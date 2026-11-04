@@ -158,7 +158,7 @@ export const StorageCleanupModal: React.FC<StorageCleanupModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 italic">
-              Unlike Seedr's 5GB free limit, SeedFlow utilizes the full physical capacity of your host server storage.
+              Unlike Seedr's 5GB free limit, Torrent Studio utilizes the full physical capacity of your host server storage.
             </p>
           </div>
 

@@ -108,7 +108,7 @@ export const QbtSettingsModal: React.FC<QbtSettingsModalProps> = ({
                 <span>Integrated VPS qBittorrent</span>
               </p>
               <p className="text-[10px] text-slate-400 mt-1">
-                qBittorrent runs privately on this Oracle VPS and is controlled by SeedFlow through its WebAPI.
+                qBittorrent runs privately on this Oracle VPS and is controlled by Torrent Studio through its WebAPI.
               </p>
             </div>
           </div>
