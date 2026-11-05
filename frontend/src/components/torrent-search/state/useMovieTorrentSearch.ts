@@ -75,7 +75,9 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
     const cacheKey = normalizeGroupTitle(movie.title) + '|' + String(movie.year || '');
     const cachedDetails = movieTorrentDetailsCacheRef.current.get(cacheKey);
     const persistedDetails = cachedDetails || readLocalCache<{ groups: TorrentQualityGroup[]; savedAt: number }>(MOVIE_TORRENT_CACHE_STORAGE_KEY, cacheKey);
-    if (persistedDetails && Date.now() - persistedDetails.savedAt < MOVIE_TORRENT_CACHE_TTL_MS) {
+    // An empty cached result is never a hit: older builds saved "no releases" for 7 days, which
+    // would keep opening the NexStream-only card (Prepare disabled) even after torrents exist.
+    if (persistedDetails && persistedDetails.groups?.length > 0 && Date.now() - persistedDetails.savedAt < MOVIE_TORRENT_CACHE_TTL_MS) {
       movieTorrentDetailsCacheRef.current.set(cacheKey, persistedDetails);
       const groups = persistedDetails.groups.map(group => ({
         ...group,
@@ -258,13 +260,15 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
 
       // Cache the complete grouped release details (quality variants, sources,
       // seed/leech counts and file sizes) so a later Prepare-card open is instant.
-      // Cache empty results briefly too, avoiding repeated indexer scans for titles
-      // that currently have no usable releases.
-      movieTorrentDetailsCacheRef.current.set(cacheKey, { groups, savedAt: Date.now() });
-      persistMovieTorrentCache();
-      if (movieTorrentDetailsCacheRef.current.size > 250) {
-        const oldestKey = movieTorrentDetailsCacheRef.current.keys().next().value;
-        if (oldestKey) movieTorrentDetailsCacheRef.current.delete(oldestKey);
+      // Only non-empty results are cached. The lookup is a local dictionary hit on the server,
+      // so remembering "no releases" saves nothing and would hide torrents added later.
+      if (groups.length > 0) {
+        movieTorrentDetailsCacheRef.current.set(cacheKey, { groups, savedAt: Date.now() });
+        persistMovieTorrentCache();
+        if (movieTorrentDetailsCacheRef.current.size > 250) {
+          const oldestKey = movieTorrentDetailsCacheRef.current.keys().next().value;
+          if (oldestKey) movieTorrentDetailsCacheRef.current.delete(oldestKey);
+        }
       }
 
       if (groups.length === 0) {

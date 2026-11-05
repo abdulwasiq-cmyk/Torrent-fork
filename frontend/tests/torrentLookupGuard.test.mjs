@@ -45,3 +45,10 @@ test('section loading and paging code never mention torrent files', async () => 
   const sectionMethod = search.split('async getSectionCache')[1].split('async getTorrentOptions')[0];
   assert.ok(!sectionMethod.includes('torrent-options'), 'getSectionCache must not fetch torrent data');
 });
+
+test('an empty cached "no releases" result is never served or saved', async () => {
+  const text = await readFile(path.join(SRC, 'components/torrent-search/state/useMovieTorrentSearch.ts'), 'utf8');
+  assert.match(text, /persistedDetails\.groups\?\.length > 0 && Date\.now\(\)/, 'cached empty results must count as a miss');
+  const write = text.split('movieTorrentDetailsCacheRef.current.set(cacheKey, { groups, savedAt')[0].trimEnd();
+  assert.ok(write.endsWith('if (groups.length > 0) {'), 'only non-empty results may be written to the cache');
+});
