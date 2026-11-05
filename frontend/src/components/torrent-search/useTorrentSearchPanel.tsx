@@ -30,6 +30,7 @@ import { useGroupedResults } from './state/useGroupedResults.ts';
 import { usePosterEffects } from './state/usePosterEffects.ts';
 import { useSynopsisPrefetch } from './state/useSynopsisPrefetch.ts';
 import { useFranchisePageEffect } from './state/useFranchisePageEffect.ts';
+import { useFranchiseTorrentJoin } from './state/useFranchiseTorrentJoin.ts';
 import { useVisibleMovieCatalogue } from './state/useVisibleMovieCatalogue.ts';
 import { useCatalogueDetailsPrefetch } from './state/useCatalogueDetailsPrefetch.ts';
 import { useTorrentTitleBubble } from './state/useTorrentTitleBubble.ts';
@@ -660,6 +661,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
       .catch(() => { storedRatingsLoadedRef.current = false; });
   }, [classicsSort.key, activeFranchiseSearchMode]);
   const { sortedResults, groupedResults } = useGroupedResults({ results, resolutionFilter, sizeSort, timeSort, isMarvelEnglishResults, showMarvelWebSeries, marvelFilmFilter, activeFranchiseSearchMode, classicsSort, imdbRatingsByKey: activeFranchiseSearchMode && classicsSort.key === 'rating' ? imdbRatingsByKey : NO_RATINGS });
+  useFranchiseTorrentJoin({ expandedSearchGroupKey, groupedResults, activeFranchiseSearchMode, setResults });
   useFranchisePageEffect({ activeFranchiseSearchMode, franchiseGridPage, franchiseGridPageSize, error, groupedResults, searchAvailabilityByGroup, setSearchAvailabilityByGroup });
   useSynopsisPrefetch({ franchiseGridPage, franchiseGridPageSize, groupedResults, searchMetadata, setSearchMetadata, tvMetadataRequestedRef, activeFranchiseSearchMode });
   usePosterEffects({ groupedResults, franchiseGridPage, franchiseGridPageSize, posterFirstPageReadyRef, setPosterFirstPageReady, previousPosterPageRef, movieCatalogue, posterFirstPageReady, queueOttLookups, activeFranchiseSearchMode, posterBackgroundGenerationRef, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterBackgroundAttemptsRef, posterBackgroundActiveKeysRef, enqueuePosterBackgroundJobs, pendingPosterAction, setPendingPosterAction, prepareClickIntentRef, prepareTraceIdRef, setExpandedSearchGroupKey, searchMovieTorrents });

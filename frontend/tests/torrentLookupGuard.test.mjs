@@ -20,13 +20,23 @@ async function sourceFiles(dir) {
 
 const rel = file => path.relative(SRC, file).split(path.sep).join('/');
 
-test('getTorrentOptions is only called from the Prepare click path', async () => {
+test('getTorrentOptions is only called from the two Prepare click paths', async () => {
   const callers = [];
   for (const file of await sourceFiles(SRC)) {
     const text = await readFile(file, 'utf8');
     if (/\.getTorrentOptions\s*\(/.test(text)) callers.push(rel(file));
   }
-  assert.deepEqual(callers, ['components/torrent-search/state/useMovieTorrentSearch.ts']);
+  assert.deepEqual(callers.sort(), [
+    'components/torrent-search/state/useFranchiseTorrentJoin.ts',   // Marvel / DC / Favourites: card opened
+    'components/torrent-search/state/useMovieTorrentSearch.ts',     // regional grids: Prepare clicked
+  ]);
+});
+
+test('the franchise join only runs for an expanded card in a franchise view', async () => {
+  const text = await readFile(path.join(SRC, 'components/torrent-search/state/useFranchiseTorrentJoin.ts'), 'utf8');
+  const guard = text.indexOf('if (!expandedSearchGroupKey || !activeFranchiseSearchMode || !franchiseCatalogueSection(activeFranchiseSearchMode)) return;');
+  assert.ok(guard > 0 && text.indexOf('api.getTorrentOptions(') > guard, 'lookup must sit behind the expanded-card guard');
+  assert.ok(!/api\.getSectionCache|loadCachedFranchisePage/.test(text), 'the join must not touch page loading');
 });
 
 test('the Prepare lookup runs after the click-intent guard in searchMovieTorrents', async () => {
