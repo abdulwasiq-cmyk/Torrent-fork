@@ -47,6 +47,31 @@ export const searchApi = {
     }
   },
 
+  // Releases for ONE movie from the per-section torrent files. Only called when the user
+  // clicks Prepare; page loads and pagination never touch torrent data.
+  async getTorrentOptions(
+    movie: { tmdbId?: number | string | null; title: string; year?: number | string | null },
+    signal?: AbortSignal,
+    section = 'all',
+  ): Promise<TorrentSearchResult[]> {
+    const params = new URLSearchParams();
+    const tmdbId = String(movie.tmdbId ?? '').trim();
+    if (/^\d{1,12}$/.test(tmdbId)) params.set('tmdb_id', tmdbId);
+    const year = String(movie.year ?? '').trim().slice(0, 4);
+    if (movie.title && year) {
+      params.set('title', movie.title.slice(0, 200));
+      params.set('year', year);
+    }
+    if (!params.has('tmdb_id') && !params.has('title')) return [];
+    const res = await apiFetch('/api/sections/' + encodeURIComponent(section) + '/torrent-options?' + params.toString(), {
+      signal,
+    });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => null);
+    const rows = data?.status === 'ready' ? data?.torrentDetails?.results : null;
+    return Array.isArray(rows) ? (rows as TorrentSearchResult[]) : [];
+  },
+
   async searchMediaMetadata(query: string, signal?: AbortSignal): Promise<SearchMediaMetadataResponse> {
     const params = new URLSearchParams({ q: query });
     const res = await fetch(API_BASE + '/api/search/metadata?' + params.toString(), {

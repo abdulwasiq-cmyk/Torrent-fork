@@ -1,4 +1,4 @@
-import { API_BASE, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
+import { api, API_BASE, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
 import searchLimits from '../../../../search_limits.json';
 import { TorrentQualityGroup, groupTorrentResults, normalizeGroupTitle, torrentGroupReleaseYear, torrentResultKey } from '../grouping.ts';
 import { cataloguePosterSource } from '../cataloguePosters.ts';
@@ -147,6 +147,18 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
           quality: '',
         }));
       if (data.length === 0) data = null;
+
+      // Next: the per-section torrent files (one small dictionary lookup on the server,
+      // only ever reached from a Prepare click).
+      if (!data) {
+        try {
+          const fromSectionFiles = await api.getTorrentOptions(movie, controller.signal);
+          if (fromSectionFiles.length > 0) data = fromSectionFiles;
+        } catch (error: any) {
+          if (error?.name === 'AbortError') return;
+          /* The prebuilt regional cache below remains the fallback. */
+        }
+      }
 
       // Prefer the movie's bundled torrent matches; query the shared VPS snapshot
       // only when this catalogue row does not already include a release.

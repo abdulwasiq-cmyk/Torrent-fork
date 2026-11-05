@@ -35,6 +35,36 @@ Run `python scripts/cache_report.py` for a per-file coverage table (rows, tmdbId
 | `APP_DATA_DIR` | `/app/data` | Runtime cache directory (point at a Render disk to keep it across deploys). |
 | `CACHE_SEED_DIR` | `/app/cache-seed` | Where the seed is read from. |
 
+## Torrent files (separate from the nine section files)
+
+`<section>-torrents.json` (hollywood, bollywood, marvel, dc, highest-rated, korean, pakistani, anime,
+favourites) hold the releases the **Prepare** button uses. They are per-title lookups, not catalogues:
+
+```
+{"schemaVersion": 2, "kind": "torrent-options", "section": "marvel", "trackers": [...shared...],
+ "titles": {"movie:617126": {"title": "...", "year": 2025, "releases": [{"infoHash", "title", "size", "seeders", "leechers", "indexer", "infoUrl"}]}}}
+```
+
+How they are used, and the rules that keep the app fast:
+
+1. The nine section files (`hollywood.json`, ...) stay metadata-only. `validate_section_caches.py` and
+   `test_migrate_torrent_cache.py` fail if a torrent field ever appears in them.
+2. Page loads and pagination only call `/api/sections/{section}` (one file per section, paged in the browser).
+   Nothing in that path reads torrent data. `frontend/tests/torrentLookupGuard.test.mjs` enforces this.
+3. Torrent data is requested only when a user clicks Prepare: `GET /api/sections/all/torrent-options?tmdb_id=&title=&year=`
+   (`backend/catalogues/torrent_options.py`). Each file is parsed once and kept as a dict (about 2 MiB
+   in memory, ~0.2 ms per lookup); it is re-read only when the file changes. No locks, no checksum
+   pass, no per-request validation. Magnets are rebuilt from info hash + title + the shared trackers.
+4. Prepare tries, in order: matches embedded in the card, `torrent-options`, then the older
+   `/api/regional-movies/prebuilt` cache. A miss at any step simply falls through.
+5. Keep them small: at most 10 releases per title (4 per resolution), only releases the Prepare card
+   would show (size window from `search_limits.json`, no cam/telesync/screener, title in the release name).
+
+Rebuild with `python3 -I scripts/migrate_torrent_cache.py` (reads the old data from git history and the
+Bollywood/regional caches). For fresh data, feed new scan results into the same script rather than
+adding torrent fields to the section files. Titles without releases (mostly 2026 releases, Korean,
+Anime, Pakistani) need a new scan on the VPS.
+
 ## Known gaps
 
 Three titles (43 rows) have no synopsis: *Doctor Strange: The Sorcerer Supreme*,
