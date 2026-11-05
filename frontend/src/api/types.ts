@@ -1,5 +1,8 @@
 export interface TorrentSearchResult {
   sectionCacheRecord?: boolean;
+  /** TV season-pack rows only: 'complete' (whole series) or 'season' (see `season`). */
+  scope?: 'complete' | 'season';
+  season?: number;
   guid?: string;
   title: string;
   mediaTitle?: string;

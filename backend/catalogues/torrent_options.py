@@ -28,6 +28,8 @@ SECTIONS = (
 SEED_DIR = Path(__file__).resolve().parents[1] / "cache-seed"
 SCHEMA_VERSION = 2
 MAX_RESULTS = 12
+MAX_TV_RESULTS = 40   # a series has season packs and several qualities per season
+MEDIA = ("movie", "tv")
 
 
 def normalize_title(value: object) -> str:
@@ -58,7 +60,8 @@ class _Index:
             self.by_key[key] = entry
             title, year = normalize_title(entry.get("title")), _year(entry.get("year"))
             if title and year:
-                self.by_title_year.setdefault(f"{title}|{year}", key)
+                # key is "movie:<id>" or "tv:<id>"; movies and series never collide on title+year
+                self.by_title_year.setdefault(f"{key.split(':', 1)[0]}|{title}|{year}", key)
 
 
 # section -> ((mtime_ns, size), index). Plain dict assignment is atomic in CPython; two
@@ -108,22 +111,28 @@ def lookup(
     title: str | None = None,
     year: str | int | None = None,
     seed_dir: Path | None = None,
+    media: str = "movie",
 ) -> list[dict[str, Any]]:
-    """Return ready-to-use release rows for one movie, best seeded first.
+    """Return ready-to-use release rows for one movie or series, best seeded first.
+
+    ``media="tv"`` reads the ``tv:<tmdbId>`` entries: season packs / complete series, ordered
+    complete first, then by season, then by seeders. No size window is applied to them.
 
     Matches by TMDB id first, then by normalised title + year. ``sections=None`` searches
     all nine files and merges what they know about the title (a film can sit in several
     sections, e.g. Hollywood "latest" and Marvel).
     """
+    if media not in MEDIA:
+        return []
     directory = seed_dir or SEED_DIR
     tmdb = str(tmdb_id or "").strip()
-    title_key = f"{normalize_title(title)}|{_year(year)}" if title and _year(year) else ""
+    title_key = f"{media}|{normalize_title(title)}|{_year(year)}" if title and _year(year) else ""
     merged: dict[str, dict[str, Any]] = {}
     for section in sections or SECTIONS:
         index = _index_for(section, directory)
         if index is None:
             continue
-        key = f"movie:{tmdb}" if tmdb and f"movie:{tmdb}" in index.by_key else index.by_title_year.get(title_key)
+        key = f"{media}:{tmdb}" if tmdb and f"{media}:{tmdb}" in index.by_key else index.by_title_year.get(title_key)
         entry = index.by_key.get(key) if key else None
         if entry is None:
             continue
@@ -145,11 +154,18 @@ def lookup(
                 "magnetUrl": build_magnet(digest, str(release.get("title") or ""), index.trackers),
                 "year": entry_year,
             }
+            if media == "tv":
+                row["scope"] = "complete" if release.get("scope") == "complete" else "season"
+                row["season"] = int(release.get("season") or 0)
             if release.get("infoUrl"):
                 row["infoUrl"] = row["sourceUrl"] = release["infoUrl"]
             previous = merged.get(digest)
             if previous is None or row["seeders"] > previous["seeders"]:
                 merged[digest] = row
+    if media == "tv":
+        rows = sorted(merged.values(), key=lambda r: (
+            r["scope"] != "complete", r["season"], -r["seeders"], -r["leechers"], r["infoHash"]))
+        return rows[:MAX_TV_RESULTS]
     rows = sorted(merged.values(), key=lambda r: (-r["seeders"], -r["leechers"], r["infoHash"]))
     return rows[:MAX_RESULTS]
 
@@ -159,4 +175,4 @@ def clear_memory_cache() -> None:
     _INDEXES.clear()
 
 
-__all__ = ["SECTIONS", "SEED_DIR", "build_magnet", "clear_memory_cache", "lookup", "normalize_title"]
+__all__ = ["MAX_TV_RESULTS", "SECTIONS", "SEED_DIR", "build_magnet", "clear_memory_cache", "lookup", "normalize_title"]

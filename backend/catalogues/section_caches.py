@@ -41,8 +41,9 @@ async def api_get_torrent_options(
     tmdb_id: str | None = Query(None, pattern=r"^\d{1,12}$"),
     title: str | None = Query(None, min_length=1, max_length=200),
     year: str = Query("", max_length=4),
+    media: str = Query("movie", pattern=r"^(movie|tv)$"),
 ) -> dict[str, Any]:
-    """Releases for ONE movie from the ``<section>-torrents.json`` files (Prepare click only).
+    """Releases for ONE movie (or, with ``media=tv``, one series' season packs) from the ``<section>-torrents.json`` files (Prepare click only).
 
     ``section`` is one of the nine section names, or ``all`` to search every file. The
     response mirrors /api/regional-movies/prebuilt so the Prepare card reads either one.
@@ -57,6 +58,7 @@ async def api_get_torrent_options(
         tmdb_id=tmdb_id,
         title=title,
         year=year,
+        media=media,
     )
     if not rows:
         return {"status": "not_cached", "section": section, "torrentDetails": None}

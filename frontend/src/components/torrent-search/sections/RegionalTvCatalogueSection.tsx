@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import type { RegionalTvGroup, RegionalTvMode } from '../types.ts';
 import { imdbRatingKey } from '../grouping.ts';
-import { TvShowCard } from '../TvShowCard.tsx';
+import { TvShowTile } from '../TvShowTile.tsx';
 import type { PanelModel } from '../useTorrentSearchPanel.tsx';
 
 const REGIONAL_SECTIONS = ['hollywood', 'bollywood', 'korean', 'pakistani', 'anime'] as const;
@@ -148,11 +148,11 @@ export function RegionalTvCatalogueSection({ vm }: { vm: PanelModel }) {
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 lg:gap-4">
             {sortedShows.map(show => (
-              <TvShowCard
+              <TvShowTile
                 key={String(show.id)}
                 show={show}
                 imdb={imdbRatingsByKey[imdbRatingKey(show.title, show.year, 'tv')]}
-                onOpen={() => {
+                onPlay={() => {
                   if (activeRegionalSection === 'anime') openYenimeRequest(show.title, show.year, show.malId, 1, show.id);
                   else playCatalogueTvWithNexStream(show);
                 }}

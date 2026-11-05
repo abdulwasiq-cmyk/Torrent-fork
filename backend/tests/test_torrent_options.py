@@ -139,3 +139,20 @@ def test_seed_directory_is_not_modified_by_lookups(tmp_path):
     before = {p.name: p.stat().st_mtime_ns for p in (tmp_path / "seed").glob("*-torrents.json")}
     T.lookup(None, tmdb_id="617126", seed_dir=tmp_path / "seed")
     assert before == {p.name: p.stat().st_mtime_ns for p in (tmp_path / "seed").glob("*-torrents.json")}
+
+
+def test_tv_lookup_orders_packs_and_never_mixes_with_movies(tmp_path):
+    write_file(tmp_path, "hollywood", {
+        "movie:5": {"title": "Reacher", "year": 2022, "releases": [release("m")]},
+        "tv:5": {"title": "Reacher", "year": 2022, "releases": [
+            release("b", 9, "Reacher S02", size=9 * 1024**3, season=2),
+            release("c", 3, "Reacher Complete", size=40 * 1024**3, scope="complete"),
+            release("a", 50, "Reacher S01", size=8 * 1024**3, season=1)]}})
+    rows = T.lookup(("hollywood",), tmdb_id="5", seed_dir=tmp_path, media="tv")
+    assert [(r["scope"], r["season"]) for r in rows] == [("complete", 0), ("season", 1), ("season", 2)]
+    assert rows[0]["size"] == 40 * 1024**3                       # no size window for packs
+    assert rows[0]["magnetUrl"].startswith("magnet:?xt=urn:btih:" + "c" * 40)
+    assert [r["infoHash"][0] for r in T.lookup(("hollywood",), tmdb_id="5", seed_dir=tmp_path)] == ["m"]
+    by_title = T.lookup(("hollywood",), title="reacher", year="2022", seed_dir=tmp_path, media="tv")
+    assert len(by_title) == 3
+    assert T.lookup(("hollywood",), tmdb_id="5", seed_dir=tmp_path, media="anime") == []

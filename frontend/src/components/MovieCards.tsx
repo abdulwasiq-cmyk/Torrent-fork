@@ -268,6 +268,8 @@ export interface MoviePrepareCardProps {
   };
   /** Omitted when NexStream cannot play this title (no button is shown). */
   directStream?: { label: string; disabled: boolean; onClick: () => void };
+  /** TV series: copies the selected magnet and opens Webtor. Omitted when no torrent is cached. */
+  webtor?: { label: string; hint?: string; onClick: () => void };
   /** Omitted when the title has no torrent (no button is shown). */
   prepare?: { isPreparing: boolean; disabled: boolean; onClick: () => void };
   className?: string;
@@ -294,6 +296,7 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
   providers = [],
   prepared,
   directStream,
+  webtor,
   prepare,
   className = '',
 }) => {
@@ -509,9 +512,19 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
                         type="button"
                         disabled={directStream.disabled}
                         onClick={directStream.onClick}
-                        className={(prepare ? 'min-w-0 flex-1' : 'w-full') + ' whitespace-nowrap rounded-lg border border-violet-400/40 bg-violet-500/15 px-1.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-60'}
+                        className={(prepare || webtor ? 'min-w-0 flex-1' : 'w-full') + ' whitespace-nowrap rounded-lg border border-violet-400/40 bg-violet-500/15 px-1.5 py-1.5 text-[10px] font-bold text-violet-200 hover:bg-violet-500/25 disabled:opacity-60'}
                       >
                         {directStream.label === 'Resolving…' ? <><Loader2 className="inline-block w-3.5 h-3.5 mr-1 animate-spin" />Resolving…</> : <><Play className="inline-block w-3.5 h-3.5 mr-1 fill-current" />Play</>}
+                      </button>
+                      )}
+                      {webtor && (
+                      <button
+                        type="button"
+                        onClick={webtor.onClick}
+                        title="Copy the magnet link and open Webtor"
+                        className="min-w-0 flex-1 whitespace-nowrap rounded-lg border border-cyan-400/40 bg-cyan-500/15 px-1.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:bg-cyan-500/25"
+                      >
+                        <Download className="inline-block w-3.5 h-3.5 mr-1" />{webtor.label}
                       </button>
                       )}
                       {prepare && (
@@ -530,6 +543,7 @@ export const MoviePrepareCard: React.FC<MoviePrepareCardProps> = ({
                   </div>
                 )}
               </div>
+              {webtor?.hint ? <div className="mt-1.5 text-[10px] leading-snug text-slate-400" role="status">{webtor.hint}</div> : null}
             </div>
           </div>
         </div>

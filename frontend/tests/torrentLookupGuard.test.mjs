@@ -20,13 +20,14 @@ async function sourceFiles(dir) {
 
 const rel = file => path.relative(SRC, file).split(path.sep).join('/');
 
-test('getTorrentOptions is only called from the two Prepare click paths', async () => {
+test('getTorrentOptions is only called from card taps and Prepare clicks', async () => {
   const callers = [];
   for (const file of await sourceFiles(SRC)) {
     const text = await readFile(file, 'utf8');
     if (/\.getTorrentOptions\s*\(/.test(text)) callers.push(rel(file));
   }
   assert.deepEqual(callers.sort(), [
+    'components/torrent-search/TvShowTile.tsx',                     // series cards: card tapped
     'components/torrent-search/state/useFranchiseTorrentJoin.ts',   // Marvel / DC / Favourites: card opened
     'components/torrent-search/state/useMovieTorrentSearch.ts',     // regional grids: Prepare clicked
   ]);

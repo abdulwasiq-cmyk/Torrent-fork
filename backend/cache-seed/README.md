@@ -148,3 +148,16 @@ crontab -l 2>/dev/null; (crontab -l 2>/dev/null; echo '0 3 * * 1 /home/ubuntu/ts
 Run `scripts/vps/refresh_and_publish.sh publish-only` once to publish the first bundle, and
 `scripts/vps/refresh_and_publish.sh franchise` whenever Marvel/DC/classics need an update.
 The VPS makes only outbound connections, so no domain, certificate or open port is needed.
+
+### TV / web series: season packs (same nine torrent files)
+
+The `<section>-torrents.json` files also hold `"tv:<tmdbId>"` entries (season packs and
+complete-series packs; each release has `scope` = `season` | `complete` and `season` = N, no size window).
+
+* Served by `GET /api/sections/{section}/torrent-options?media=tv&tmdb_id=...` (`section` may be `all`).
+* UI: tapping a series card looks the series up once (`tvTorrentStore.ts`, cached per session).
+  Packs found: a second card opens with **Play** (the existing NexStream / VidRift / Yenime flow) and
+  **Webtor** (copies the selected pack's magnet, opens webtor.io, the user pastes it to stream or download).
+  No packs: the tap plays immediately, exactly as before. Page loads and pagination never touch these files.
+* Fill the data on the VPS (needs network): `python3 -I scripts/build_tv_torrent_cache.py --section hollywood --limit 5 --dry-run`
+  to look first, then without `--dry-run` / `--limit`. It is resumable and never touches movie entries.

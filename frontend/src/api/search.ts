@@ -53,8 +53,10 @@ export const searchApi = {
     movie: { tmdbId?: number | string | null; title: string; year?: number | string | null },
     signal?: AbortSignal,
     section = 'all',
+    media: 'movie' | 'tv' = 'movie',
   ): Promise<TorrentSearchResult[]> {
     const params = new URLSearchParams();
+    if (media === 'tv') params.set('media', 'tv');
     const tmdbId = String(movie.tmdbId ?? '').trim();
     if (/^\d{1,12}$/.test(tmdbId)) params.set('tmdb_id', tmdbId);
     const year = String(movie.year ?? '').trim().slice(0, 4);
