@@ -19,9 +19,6 @@ services:
       MDBLIST_API_KEY: "${MDBLIST_API_KEY:-}"
       SEEDR_SESSION_SECRET: "${SEEDR_SESSION_SECRET:?Set SEEDR_SESSION_SECRET in .env}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
-      # Size window for torrents on the Prepare card (empty = search_limits.json, 250 MB .. 2 GB).
-      TORRENT_MIN_SIZE_MB: "${TORRENT_MIN_SIZE_MB:-}"
-      TORRENT_MAX_SIZE_GB: "${TORRENT_MAX_SIZE_GB:-}"
     volumes:
       - torrent_studio_data:/app/data
     healthcheck:
