@@ -29,3 +29,19 @@ export function joinReleasesIntoRow(base: TorrentSearchResult, releases: Torrent
     providerLink: base.providerLink || release.providerLink,
   }));
 }
+
+/**
+ * Open a card only once its releases are in, so Prepare never flashes disabled.
+ * - nothing to look up: open synchronously (no delay for already-joined titles or known misses)
+ * - otherwise wait for the lookup, but never longer than maxWaitMs; a failed lookup also just opens
+ * `open` is called exactly once.
+ */
+export function openWhenReady(needsJoin: boolean, join: () => Promise<void>, open: () => void, maxWaitMs: number): void {
+  if (!needsJoin) { open(); return; }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wait = new Promise<void>(resolve => { timer = setTimeout(resolve, maxWaitMs); });
+  void Promise.race([join(), wait]).then(
+    () => { clearTimeout(timer); open(); },
+    () => { clearTimeout(timer); open(); },
+  );
+}

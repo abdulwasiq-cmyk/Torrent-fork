@@ -64,3 +64,39 @@ test('other titles in the grid are untouched by one title\'s join', () => {
   assert.equal(groups.length, 2);
   assert.equal(groups.find(g => g.title.startsWith('Iron Man')).variants.length, 1);
 });
+
+// ---- opening the card without a flash of the disabled Prepare button -------------------------
+const { openWhenReady } = await bundle('../src/components/torrent-search/franchiseJoin.ts');
+const tick = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+test('no lookup needed: the card opens synchronously (no added delay)', () => {
+  let opened = 0;
+  openWhenReady(false, () => { throw new Error('must not look up'); }, () => { opened += 1; }, 800);
+  assert.equal(opened, 1);
+});
+
+test('lookup needed: the card opens only after the releases are in', async () => {
+  const events = [];
+  let release;
+  const join = () => new Promise(resolve => { release = () => { events.push('joined'); resolve(); }; });
+  openWhenReady(true, join, () => events.push('opened'), 800);
+  await tick(20);
+  assert.deepEqual(events, [], 'still waiting: the card has not opened with a disabled Prepare');
+  release();
+  await tick(5);
+  assert.deepEqual(events, ['joined', 'opened']);
+});
+
+test('a slow lookup never blocks the tap longer than the cap', async () => {
+  let opened = 0;
+  openWhenReady(true, () => new Promise(() => {}), () => { opened += 1; }, 30);
+  await tick(10); assert.equal(opened, 0);
+  await tick(60); assert.equal(opened, 1);
+});
+
+test('a failed lookup still opens the card, and open runs exactly once', async () => {
+  let opened = 0;
+  openWhenReady(true, () => Promise.reject(new Error('offline')), () => { opened += 1; }, 30);
+  await tick(80);
+  assert.equal(opened, 1, 'opened once even though both the failure and the timer fired');
+});

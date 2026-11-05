@@ -661,7 +661,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
       .catch(() => { storedRatingsLoadedRef.current = false; });
   }, [classicsSort.key, activeFranchiseSearchMode]);
   const { sortedResults, groupedResults } = useGroupedResults({ results, resolutionFilter, sizeSort, timeSort, isMarvelEnglishResults, showMarvelWebSeries, marvelFilmFilter, activeFranchiseSearchMode, classicsSort, imdbRatingsByKey: activeFranchiseSearchMode && classicsSort.key === 'rating' ? imdbRatingsByKey : NO_RATINGS });
-  useFranchiseTorrentJoin({ expandedSearchGroupKey, groupedResults, activeFranchiseSearchMode, setResults });
+  const { openFranchiseCard } = useFranchiseTorrentJoin({ expandedSearchGroupKey, groupedResults, activeFranchiseSearchMode, setResults });
   useFranchisePageEffect({ activeFranchiseSearchMode, franchiseGridPage, franchiseGridPageSize, error, groupedResults, searchAvailabilityByGroup, setSearchAvailabilityByGroup });
   useSynopsisPrefetch({ franchiseGridPage, franchiseGridPageSize, groupedResults, searchMetadata, setSearchMetadata, tvMetadataRequestedRef, activeFranchiseSearchMode });
   usePosterEffects({ groupedResults, franchiseGridPage, franchiseGridPageSize, posterFirstPageReadyRef, setPosterFirstPageReady, previousPosterPageRef, movieCatalogue, posterFirstPageReady, queueOttLookups, activeFranchiseSearchMode, posterBackgroundGenerationRef, posterBackgroundQueueRef, posterBackgroundQueuedRef, posterBackgroundAttemptsRef, posterBackgroundActiveKeysRef, enqueuePosterBackgroundJobs, pendingPosterAction, setPendingPosterAction, prepareClickIntentRef, prepareTraceIdRef, setExpandedSearchGroupKey, searchMovieTorrents });
@@ -945,6 +945,7 @@ export function useTorrentSearchPanel({ seedrFiles, seedrDeletedFolderIds, onPre
     playCatalogueTvWithNexStream,
     runSearch,
     searchMovieTorrents,
+    openFranchiseCard,
     selectMovieTorrentGroup,
     closeMoviePrepareCard,
     loadDcWebSeries,

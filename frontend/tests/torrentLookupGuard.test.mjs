@@ -32,10 +32,15 @@ test('getTorrentOptions is only called from the two Prepare click paths', async 
   ]);
 });
 
-test('the franchise join only runs for an expanded card in a franchise view', async () => {
+test('the franchise join only runs for a tapped or expanded card in a franchise view', async () => {
   const text = await readFile(path.join(SRC, 'components/torrent-search/state/useFranchiseTorrentJoin.ts'), 'utf8');
-  const guard = text.indexOf('if (!expandedSearchGroupKey || !activeFranchiseSearchMode || !franchiseCatalogueSection(activeFranchiseSearchMode)) return;');
-  assert.ok(guard > 0 && text.indexOf('api.getTorrentOptions(') > guard, 'lookup must sit behind the expanded-card guard');
+  const lookup = text.indexOf('api.getTorrentOptions(');
+  const modeGuard = text.indexOf('!franchiseCatalogueSection(activeFranchiseSearchMode)');
+  assert.ok(modeGuard > 0 && lookup > modeGuard, 'lookup must sit behind the franchise-mode guard');
+  // the only two ways to reach it: the card tap, or an already-expanded card
+  assert.match(text, /const openFranchiseCard = /);
+  assert.match(text, /useEffect\(\(\) => \{\s*if \(!expandedSearchGroupKey\) return;/);
+  assert.equal(text.match(/joinGroup\(/g).length, 2, 'joinGroup may only be called from the tap path and the expanded-card effect');
   assert.ok(!/api\.getSectionCache|loadCachedFranchisePage/.test(text), 'the join must not touch page loading');
 });
 
