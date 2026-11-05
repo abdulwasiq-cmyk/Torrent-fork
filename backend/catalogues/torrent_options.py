@@ -112,11 +112,18 @@ def lookup(
     year: str | int | None = None,
     seed_dir: Path | None = None,
     media: str = "movie",
+    min_size: int | None = None,
+    max_size: int | None = None,
 ) -> list[dict[str, Any]]:
     """Return ready-to-use release rows for one movie or series, best seeded first.
 
     ``media="tv"`` reads the ``tv:<tmdbId>`` entries: season packs / complete series, ordered
     complete first, then by season, then by seeders. No size window is applied to them.
+
+    ``min_size`` / ``max_size`` (bytes) are the configured size window for movies
+    (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB). The files keep a wider range than any window
+    you are likely to set, so the window is applied here, before the result cap, and a larger
+    setting simply reveals more of what is already stored.
 
     Matches by TMDB id first, then by normalised title + year. ``sections=None`` searches
     all nine files and merges what they know about the title (a film can sit in several
@@ -141,6 +148,10 @@ def lookup(
             digest = str(release.get("infoHash") or "")
             if not digest:
                 continue
+            if media == "movie":
+                size = release.get("size") or 0
+                if (min_size is not None and size < min_size) or (max_size is not None and size > max_size):
+                    continue
             row = {
                 "guid": digest,
                 "title": release.get("title") or "",

@@ -41,6 +41,20 @@ _search_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _search_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
 
 
+def _in_size_window(size: Any) -> bool:
+    """True when a release size is inside the configured window (TORRENT_MIN_SIZE_MB..TORRENT_MAX_SIZE_GB).
+
+    Providers apply this to their own rows BEFORE sorting and truncating to ``limit``: a release
+    outside the window can never be shown (the final gate drops it anyway), so it must not take
+    up one of the ``limit`` slots that in-window releases could use.
+    """
+    try:
+        value = int(float(size or 0))
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return MIN_SEARCH_RESULT_SIZE_BYTES <= value <= MAX_SEARCH_RESULT_SIZE_BYTES
+
+
 def _search_tokens(value: str) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", value.lower()) if token]
 
@@ -571,6 +585,7 @@ async def search_yts_movies(query: str, limit: int = 50) -> list[dict[str, Any]]
                 "sourceUrl": "",
             })
 
+    results = [row for row in results if _in_size_window(row.get("size"))]
     results.sort(
         key=lambda row: (row["seeders"] + row["leechers"], row["publishDate"]),
         reverse=True,
@@ -670,6 +685,7 @@ async def search_tv_eztv(query: str, limit: int = 30) -> list[dict[str, Any]]:
             "infoUrl": "",
             "sourceUrl": "",
         })
+    results = [row for row in results if _in_size_window(row.get("size"))]
     _, season, episode = _media_search_parts(query)
     if season is not None:
         results = [
@@ -912,7 +928,7 @@ async def search_limetorrents(
         )
 
         results: list[dict[str, Any]] = []
-        for row in parsed_rows[:min(max(limit, 1), 30)]:
+        for row in [r for r in parsed_rows if _in_size_window(r.get("size_bytes"))][:min(max(limit, 1), 30)]:
             detail_url = str(row.get("detail_url") or "").strip()
             if not detail_url:
                 continue
@@ -1083,6 +1099,7 @@ async def search_knaben(
             "category": category,
         })
 
+    results = [row for row in results if _in_size_window(row.get("size"))]
     results.sort(
         key=lambda row: (
             1 if _normalize_title(str(row["title"])).startswith(_normalize_title(title_query)) else 0,
@@ -1124,7 +1141,7 @@ async def search_torrents_csv(query: str, limit: int) -> dict[str, Any]:
             if not re.fullmatch(r"[0-9a-f]{40}", h):
                 continue
             title = str(item.get("name") or "Untitled").strip()
-            if not title:
+            if not title or not _in_size_window(item.get("size_bytes")):
                 continue
             results.append({
                 "guid": f"torrents-csv-{h}",
@@ -1170,14 +1187,16 @@ async def search_apibay(query: str, limit: int) -> dict[str, Any]:
 
         rows = payload if isinstance(payload, list) else []
         results: list[dict[str, Any]] = []
-        for item in rows[:limit]:
+        for item in rows:
+            if len(results) >= limit:
+                break
             if not isinstance(item, dict):
                 continue
             h = str(item.get("info_hash") or "").strip().lower()
             if not re.fullmatch(r"[0-9a-f]{40}", h):
                 continue
             title = str(item.get("name") or "Untitled").strip()
-            if not title:
+            if not title or not _in_size_window(item.get("size")):
                 continue
             results.append({
                 "guid": f"apibay-{h}",

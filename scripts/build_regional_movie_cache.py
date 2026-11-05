@@ -30,7 +30,8 @@ TORRENT_LIMIT = 50
 # Set REGIONAL_CACHE_TORRENT_SCAN=false to refresh only catalogue pages and keep the
 # torrent matches from the previous build (torrent sites are slow/blocked on CI runners).
 TORRENT_SCAN = os.getenv("REGIONAL_CACHE_TORRENT_SCAN", "true").strip().lower() not in ("0", "false", "no", "off")
-MAX_SIZE = 5 * 1024**3
+# Stored range, wider than the display window (TORRENT_MAX_SIZE_GB): the window is applied when the cache is read.
+MAX_SIZE = int(float(os.getenv("REGIONAL_CACHE_MAX_SIZE_GB", "10")) * 1024**3)
 # Same lower bound the app applies when it reads saved torrents; a row below it would be hidden anyway.
 MIN_SIZE = int(os.getenv("REGIONAL_CACHE_MIN_SIZE_MB", "100")) * 1024**2
 SCAN_VERSION = 2  # bump to force one re-scan of older (possibly too strict) "empty" results

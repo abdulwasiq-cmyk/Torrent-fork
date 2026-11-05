@@ -1,5 +1,5 @@
 import { api, API_BASE, MovieCatalogueItem, TorrentSearchResult } from '../../../api/client.ts';
-import searchLimits from '../../../../search_limits.json';
+import { searchLimits, searchLimitsSignature } from '../../../config/searchLimits.ts';
 import { TorrentQualityGroup, groupTorrentResults, normalizeGroupTitle, torrentGroupReleaseYear, torrentResultKey } from '../grouping.ts';
 import { cataloguePosterSource } from '../cataloguePosters.ts';
 import { catalogueMovieIdentity } from '../helpers.ts';
@@ -72,7 +72,7 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
     setSelectedQualityByGroup({});
     prepareBuildPendingRef.current = false;
 
-    const cacheKey = normalizeGroupTitle(movie.title) + '|' + String(movie.year || '');
+    const cacheKey = normalizeGroupTitle(movie.title) + '|' + String(movie.year || '') + '|' + searchLimitsSignature;
     const cachedDetails = movieTorrentDetailsCacheRef.current.get(cacheKey);
     const persistedDetails = cachedDetails || readLocalCache<{ groups: TorrentQualityGroup[]; savedAt: number }>(MOVIE_TORRENT_CACHE_STORAGE_KEY, cacheKey);
     // An empty cached result is never a hit: older builds saved "no releases" for 7 days, which
@@ -208,8 +208,8 @@ export function useMovieTorrentSearch({ prepareClickIntentRef, prepareTraceIdRef
       // Prefer active swarms, but don't let missing seeder metadata hide every
       // release. The regular search can display results from indexers that do
       // not report seed counts reliably.
-      const minSeedrFriendlySize = searchLimits.minSizeMb * 1024 * 1024;
-      const maxSeedrFriendlySize = searchLimits.maxSizeGb * 1024 * 1024 * 1024;
+      const minSeedrFriendlySize = searchLimits.minSizeBytes;
+      const maxSeedrFriendlySize = searchLimits.maxSizeBytes;
       const lowQualityRelease = /(?:^|[\s._()[\]-])(?:cam(?:rip)?|hdcam|hd[ ._-]?cam|telesync|tele[ ._-]?sync|ts[ ._-]?(?:md|ac3|hd)?|telecine|dvdscr|dvd[ ._-]?scr|screener|workprint)(?:$|[\s._()[\]-])/i;
       // Indexers often return loose keyword matches. Keep a result only when the
       // actual release title contains the selected movie title as a phrase, so a

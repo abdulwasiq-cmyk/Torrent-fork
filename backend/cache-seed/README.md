@@ -161,3 +161,22 @@ complete-series packs; each release has `scope` = `season` | `complete` and `sea
   No packs: the tap plays immediately, exactly as before. Page loads and pagination never touch these files.
 * Fill the data on the VPS (needs network): `python3 -I scripts/build_tv_torrent_cache.py --section hollywood --limit 5 --dry-run`
   to look first, then without `--dry-run` / `--limit`. It is resumable and never touches movie entries.
+
+### Size window (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB)
+
+Which releases the Prepare card shows by size is one setting, read once in `backend/core/settings.py`
+(env vars win, then `search_limits.json`; default 250 MB .. 2 GB). Change it with an env var and restart:
+`TORRENT_MAX_SIZE_GB=5` (decimals allowed). It is applied in layers, each as early as it can be without
+dropping anything relevant:
+
+1. **Search providers** (`search_providers.py`, `_in_size_window`): each provider drops out-of-window rows
+   *before* sorting and truncating to its `limit`, so a 4 GB release cannot take a slot an in-window one could use.
+2. **Merge gate** (`_search_quality_filter`) and the catalogue/prebuilt readers (`misc_routes`, `catalogues_extra`): same constants.
+3. **Cached torrent files** (`torrent_options.lookup`): the window is applied while a title is served, *before*
+   the 12-result cap. The files store a wider range (100 MB .. 10 GB, kept per size band so big releases cannot
+   crowd out smaller ones), so raising the limit reveals data that is already stored.
+4. **Browser**: `index.html` is served with `window.__SEARCH_LIMITS__` (no extra request); the Prepare filters and the
+   Prepare-card cache key use it, so a changed window never reuses results cached under another one.
+
+TV season packs (Webtor) are not size-filtered. To store a different range, rebuild with
+`TORRENT_CACHE_MAX_SIZE_GB=12 python3 -I scripts/migrate_torrent_cache.py` (this keeps the `tv:` entries).

@@ -65,7 +65,7 @@ def test_per_resolution_and_per_title_caps():
     candidates += [release(f"Heat 1995 720p v{i}", seeders=50 - i, h=f"{i + 100:040x}") for i in range(8)]
     candidates += [release(f"Heat 1995 2160p v{i}", seeders=20 - i, h=f"{i + 200:040x}") for i in range(8)]
     kept = M.select_releases(candidates, "Heat", LIMITS)
-    assert len(kept) == M.MAX_RELEASES_PER_TITLE
+    assert len(kept) == M.MAX_RELEASES_PER_BAND   # all three resolutions sit in one size band
     assert sum(1 for r in kept if "1080p" in r["title"]) == M.MAX_RELEASES_PER_RESOLUTION
     assert [r["seeders"] for r in kept] == sorted((r["seeders"] for r in kept), reverse=True)
 
@@ -127,3 +127,14 @@ def test_committed_torrent_files_are_valid_small_and_match_their_section_rows():
 
 def metadata_text(section):
     return (SEED / f"{section}.json").read_text(encoding="utf-8")
+
+
+def test_size_bands_keep_in_window_releases_when_big_ones_have_more_seeders():
+    """A 2 GB display window must still find releases when the best-seeded ones are all 4 GB."""
+    big = [release(f"Heat 1995 1080p big{i}", size=4 * 1024 * MB, seeders=500 - i, h=f"{i + 300:040x}") for i in range(12)]
+    small = [release(f"Heat 1995 1080p small{i}", size=int(1.5 * 1024) * MB, seeders=5 - (i % 3), h=f"{i + 400:040x}") for i in range(3)]
+    limits = {"minSizeBytes": 100 * MB, "maxSizeBytes": 10 * 1024 * MB}
+    kept = M.select_releases(big + small, "Heat", limits)
+    in_window = [r for r in kept if r["size"] <= 2 * 1024 * MB]
+    assert len(in_window) == 3, "the 1.5 GB releases survive although the 4 GB ones out-seed them"
+    assert sum(1 for r in kept if r["size"] > 3 * 1024 * MB) == M.MAX_RELEASES_PER_RESOLUTION

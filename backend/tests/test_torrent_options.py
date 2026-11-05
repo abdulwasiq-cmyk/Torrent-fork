@@ -104,7 +104,7 @@ def test_results_are_capped(tmp_path):
 
 # ---- against the committed seed files ---------------------------------------------------
 def test_real_seed_files_serve_prepare_rows_for_a_known_title():
-    rows = T.lookup(None, tmdb_id="617126", seed_dir=SEED)          # The Fantastic Four: First Steps
+    rows = T.lookup(None, tmdb_id="617126", seed_dir=SEED, min_size=250 * 1024 * 1024, max_size=2 * 1024 ** 3)   # The Fantastic Four: First Steps
     assert rows, "Marvel title must have releases in the committed torrent files"
     for row in rows:
         assert len(row["infoHash"]) == 40 and row["magnetUrl"].startswith("magnet:?xt=urn:btih:" + row["infoHash"])

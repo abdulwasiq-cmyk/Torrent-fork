@@ -234,8 +234,43 @@ for _limits_path in _SEARCH_LIMITS_CANDIDATES:
         break
     except (OSError, json.JSONDecodeError):
         continue
-MIN_SEARCH_RESULT_SIZE_BYTES = max(0, int(_SEARCH_LIMITS.get("minSizeMb", 100))) * 1024 * 1024
-MAX_SEARCH_RESULT_SIZE_BYTES = max(MIN_SEARCH_RESULT_SIZE_BYTES, int(_SEARCH_LIMITS.get("maxSizeGb", 5))) * 1024 * 1024 * 1024
+
+
+def _size_limit_env(name: str) -> float | None:
+    """A positive number from the environment, or None (unset / invalid: the file value is used)."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning("Ignoring %s=%r: not a number", name, raw)
+        return None
+    if value <= 0 or value != value or value == float("inf"):
+        logging.getLogger(__name__).warning("Ignoring %s=%r: must be a positive number", name, raw)
+        return None
+    return value
+
+
+# Size window for torrents shown on the Prepare card. One setting, read here once, and every
+# backend layer (providers, cached lookups, prebuilt cache routes) and the frontend (injected
+# into index.html) use it.
+#   TORRENT_MIN_SIZE_MB   smallest release to show (default: search_limits.json)
+#   TORRENT_MAX_SIZE_GB   largest release to show, decimals allowed, e.g. 2, 3.5, 5 (default: search_limits.json)
+# Changing them needs a restart, not a rebuild.
+_MIN_SIZE_MB = _size_limit_env("TORRENT_MIN_SIZE_MB")
+_MAX_SIZE_GB = _size_limit_env("TORRENT_MAX_SIZE_GB")
+if _MIN_SIZE_MB is None:
+    _MIN_SIZE_MB = max(0.0, float(_SEARCH_LIMITS.get("minSizeMb", 100)))
+if _MAX_SIZE_GB is None:
+    _MAX_SIZE_GB = max(0.0, float(_SEARCH_LIMITS.get("maxSizeGb", 5)))
+MIN_SEARCH_RESULT_SIZE_BYTES = int(_MIN_SIZE_MB * 1024 * 1024)
+MAX_SEARCH_RESULT_SIZE_BYTES = max(MIN_SEARCH_RESULT_SIZE_BYTES, int(_MAX_SIZE_GB * 1024 * 1024 * 1024))
+# What the browser receives (same numbers, in the units search_limits.json uses).
+SEARCH_SIZE_LIMITS_PUBLIC = {
+    "minSizeMb": MIN_SEARCH_RESULT_SIZE_BYTES / (1024 * 1024),
+    "maxSizeGb": MAX_SEARCH_RESULT_SIZE_BYTES / (1024 * 1024 * 1024),
+}
 SEARCH_COMPOUND_ALIASES = {
     "antman": "ant man",
     "spiderman": "spider man",

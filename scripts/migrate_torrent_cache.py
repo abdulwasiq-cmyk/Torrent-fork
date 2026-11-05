@@ -29,8 +29,8 @@ Sources (all merged, de-duplicated by infoHash):
   * backend/cache-seed/runtime/regional_movie_prebuilt_cache.json
 
 Only movie rows are migrated (the Prepare card is movie-only; TV uses NexStream).
-Every release is filtered the way the Prepare card filters it (size window from
-search_limits.json, no cam/telesync/screener, release title must contain the movie
+Every release is filtered the way the Prepare card filters it (stored size range
+TORRENT_CACHE_MIN_SIZE_MB..TORRENT_CACHE_MAX_SIZE_GB, default 100 MB..10 GB, wider than the display window, no cam/telesync/screener, release title must contain the movie
 title), so nothing is stored that the UI would hide.
 
 Standard library only. Run:  python3 -I scripts/migrate_torrent_cache.py
@@ -38,6 +38,7 @@ Standard library only. Run:  python3 -I scripts/migrate_torrent_cache.py
 from __future__ import annotations
 
 import argparse
+import os
 import base64
 import binascii
 import json
@@ -56,8 +57,14 @@ SECTIONS = (
 )
 DEFAULT_GIT_REV = "39b31c0"
 SCHEMA_VERSION = 2
-MAX_RELEASES_PER_TITLE = 10
-MAX_RELEASES_PER_RESOLUTION = 4
+MAX_RELEASES_PER_TITLE = 60       # sanity cap over all bands
+MAX_RELEASES_PER_BAND = 10        # the old per-title cap, now per size band so one band cannot crowd out another
+MAX_RELEASES_PER_RESOLUTION = 4   # per resolution AND size band (see SIZE_BAND_EDGES_GB)
+# The files must hold more than the window anyone is likely to set (TORRENT_MAX_SIZE_GB), because the
+# window is applied when a title is served. Selection is therefore done per size band: if only the
+# best-seeded releases overall were kept, the top few 1080p might all be 4 GB and a 2 GB window would
+# find nothing left to show.
+SIZE_BAND_EDGES_GB = (1, 2, 3, 5, 8)
 MAX_TRACKERS = 10
 # Trackers that no longer answer; keeping them only slows peer discovery.
 DEAD_TRACKER_MARKERS = (
@@ -271,16 +278,23 @@ def select_releases(candidates: list[dict], title: str, limits: dict) -> list[di
     usable = seeded or usable  # prefer active swarms, but do not hide every release
     usable.sort(key=lambda r: (-r["seeders"], -r["leechers"], r["size"], r["infoHash"]))
     per_resolution: Counter = Counter()
+    per_band: Counter = Counter()
     chosen = []
     for release in usable:
-        bucket = resolution_bucket(release["title"])
-        if per_resolution[bucket] >= MAX_RELEASES_PER_RESOLUTION:
+        band = size_band(release["size"])
+        bucket = (resolution_bucket(release["title"]), band)
+        if per_resolution[bucket] >= MAX_RELEASES_PER_RESOLUTION or per_band[band] >= MAX_RELEASES_PER_BAND:
             continue
         per_resolution[bucket] += 1
+        per_band[band] += 1
         chosen.append(release)
         if len(chosen) >= MAX_RELEASES_PER_TITLE:
             break
     return chosen
+
+
+def size_band(size: int) -> int:
+    return sum(1 for edge in SIZE_BAND_EDGES_GB if size > edge * 1024 ** 3)
 
 
 def pick_trackers(releases: list[dict]) -> list[str]:
@@ -361,10 +375,11 @@ def build_section(section: str, document: dict, pool: Pool, limits: dict, built_
 
 
 def load_limits() -> dict:
-    raw = read_json(ROOT / "search_limits.json")
+    """The CACHE range (what is stored), not the display window. The display window is applied when a
+    title is served (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB), so store a generous superset."""
     return {
-        "minSizeBytes": int(float(raw["minSizeMb"]) * 1024 * 1024),
-        "maxSizeBytes": int(float(raw["maxSizeGb"]) * 1024 ** 3),
+        "minSizeBytes": int(float(os.getenv("TORRENT_CACHE_MIN_SIZE_MB", "100")) * 1024 * 1024),
+        "maxSizeBytes": int(float(os.getenv("TORRENT_CACHE_MAX_SIZE_GB", "10")) * 1024 ** 3),
     }
 
 
@@ -388,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     prebuilt = load_regional_prebuilt(pool, args.seed_dir)
     print(f"pool: {old} old records + {bolly} bollywood matches + {prebuilt} prebuilt rows "
           f"-> {len(pool.releases)} unique torrents ({dict(pool.stats)})")
-    print(f"limits: {limits['minSizeBytes'] / 1024**2:.0f} MiB .. {limits['maxSizeBytes'] / 1024**3:.0f} GiB")
+    print(f"cache range: {limits['minSizeBytes'] / 1024**2:.0f} MiB .. {limits['maxSizeBytes'] / 1024**3:.0f} GiB (display window is applied when serving)")
 
     failures = 0
     totals: Counter = Counter()
@@ -400,6 +415,12 @@ def main(argv: list[str] | None = None) -> int:
             continue
         document = read_json(path)
         output, report = build_section(section, document, pool, limits, built_at)
+        target_existing = (out_dir / f"{section}-torrents.json")
+        if target_existing.is_file():   # series packs (build_tv_torrent_cache.py) live in the same file: keep them
+            previous = read_json(target_existing)
+            tv = {k: v for k, v in (previous.get("titles") or {}).items() if k.startswith("tv:")} if isinstance(previous, dict) else {}
+            if tv:
+                output["titles"] = dict(sorted({**output["titles"], **tv}.items()))
         text = json.dumps(output, ensure_ascii=False, separators=(",", ":"), sort_keys=False) + "\n"
         target = out_dir / f"{section}-torrents.json"
         if not args.dry_run:

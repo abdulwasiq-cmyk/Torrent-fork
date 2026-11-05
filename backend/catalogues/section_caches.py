@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from catalogues import torrent_options
+from core.settings import MAX_SEARCH_RESULT_SIZE_BYTES, MIN_SEARCH_RESULT_SIZE_BYTES
 
 router = APIRouter()
 SECTION_CACHE_NAMES = frozenset({
@@ -59,6 +60,8 @@ async def api_get_torrent_options(
         title=title,
         year=year,
         media=media,
+        min_size=MIN_SEARCH_RESULT_SIZE_BYTES,
+        max_size=MAX_SEARCH_RESULT_SIZE_BYTES,
     )
     if not rows:
         return {"status": "not_cached", "section": section, "torrentDetails": None}

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import searchLimits from '../../../../search_limits.json';
+import { searchLimits } from '../../../config/searchLimits.ts';
 import { filterTorrentSearchResults, groupTorrentResults, normalizeGroupTitle, releaseDateSortValue, torrentGroupReleaseYear } from '../grouping.ts';
 import { useCatalogueNavigationState } from './useCatalogueNavigationState.ts';
 import { useSearchInputState } from './useSearchInputState.ts';
@@ -8,10 +8,9 @@ import { imdbRatingKey } from '../grouping.ts';
 
 export function useGroupedResults({ results, resolutionFilter, sizeSort, timeSort, isMarvelEnglishResults, showMarvelWebSeries, marvelFilmFilter, activeFranchiseSearchMode, classicsSort, imdbRatingsByKey }: { classicsSort: ClassicsSort; imdbRatingsByKey: Record<string, { imdbRating?: number | string | null } | undefined> } & Pick<ReturnType<typeof useSearchInputState>, 'results' | 'resolutionFilter' | 'sizeSort' | 'timeSort'> & Pick<ReturnType<typeof useCatalogueNavigationState>, 'isMarvelEnglishResults' | 'showMarvelWebSeries' | 'marvelFilmFilter' | 'activeFranchiseSearchMode'>) {
   const sortedResults = useMemo(() => {
-    // Use the shared root search_limits.json settings. Keep both bounds local
-    // to this memo: the manual-search handler has its own separate scope.
-    const minSeedrFriendlySize = searchLimits.minSizeMb * 1024 * 1024;
-    const maxSeedrFriendlySize = searchLimits.maxSizeGb * 1024 * 1024 * 1024;
+    // The size window is the backend's (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB), see config/searchLimits.ts.
+    const minSeedrFriendlySize = searchLimits.minSizeBytes;
+    const maxSeedrFriendlySize = searchLimits.maxSizeBytes;
     const sorted = filterTorrentSearchResults(results, {
       minSizeBytes: minSeedrFriendlySize,
       maxSizeBytes: maxSeedrFriendlySize,

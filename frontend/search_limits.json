@@ -1,4 +1,4 @@
 {
-  "minSizeMb": 100,
-  "maxSizeGb": 5
+  "minSizeMb": 250,
+  "maxSizeGb": 2
 }
