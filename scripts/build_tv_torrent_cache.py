@@ -192,10 +192,12 @@ def entry_for(show: dict, releases: list[dict]) -> dict:
     }
 
 
-def tv_rows(section_document: dict) -> list[dict]:
+def tv_rows(section_document: dict, skip_anime: bool = False) -> list[dict]:
     rows: dict[str, dict] = {}
-    for subsection in (section_document.get("subsections") or {}).values():
+    for key, subsection in (section_document.get("subsections") or {}).items():
         if not isinstance(subsection, dict) or subsection.get("mediaType") != "tv":
+            continue
+        if skip_anime and key == "anime":
             continue
         for row in subsection.get("results") or []:
             if not isinstance(row, dict):
@@ -340,7 +342,7 @@ async def run(args: argparse.Namespace) -> int:
             print(f"  {section}: missing metadata or torrent file", file=sys.stderr)
             return 1
         existing = json.loads(target.read_text(encoding="utf-8"))
-        rows = tv_rows(json.loads(metadata_path.read_text(encoding="utf-8")))
+        rows = [] if section == "anime" else tv_rows(json.loads(metadata_path.read_text(encoding="utf-8")), skip_anime=True)  # anime is not scanned
         excluded = load_excluded()
         older = older_namesakes(all_tv_rows(args.seed_dir))
         rows = [r for r in rows if f"tv:{str(r.get('tmdbId') or r.get('id'))}" not in excluded]
