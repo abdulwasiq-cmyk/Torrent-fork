@@ -46,12 +46,13 @@ _search_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
 _SIZE_WINDOW_DISABLED: contextvars.ContextVar[bool] = contextvars.ContextVar("size_window_disabled", default=False)
 
 
-def _in_size_window(size: Any) -> bool:
-    """True when a release size is inside the configured window (TORRENT_MIN_SIZE_MB..TORRENT_MAX_SIZE_GB).
+def _in_size_window(size: Any, query: str | None = None) -> bool:
+    """The movie size window (TORRENT_MIN_SIZE_MB..TORRENT_MAX_SIZE_GB). It never applies to series.
 
-    Providers apply this to their own rows BEFORE sorting and truncating to ``limit``: a release
-    outside the window can never be shown (the final gate drops it anyway), so it must not take
-    up one of the ``limit`` slots that in-window releases could use.
+    A query that names a season or episode ("Reacher S02") is a series search: any known size is fine, because
+    season packs are far bigger than a movie and the limit exists for movies only. Providers apply this to their own
+    rows BEFORE sorting and truncating to ``limit``: a movie outside the window can never be shown (the final gate
+    drops it anyway), so it must not take one of the ``limit`` slots that in-window releases could use.
     """
     if _SIZE_WINDOW_DISABLED.get():
         return True
@@ -59,6 +60,8 @@ def _in_size_window(size: Any) -> bool:
         value = int(float(size or 0))
     except (TypeError, ValueError, OverflowError):
         return False
+    if query is not None and _search_media_kind(query) == "tv":
+        return value > 0
     return MIN_SEARCH_RESULT_SIZE_BYTES <= value <= MAX_SEARCH_RESULT_SIZE_BYTES
 
 
@@ -401,7 +404,8 @@ async def search_1337x_direct(
                         float(size_match.group(1))
                         * units[size_match.group(2).upper()]
                     )
-                    if not minimum_size <= size <= maximum_size:
+                    # a row from the TV category is a series: no size limit (the window is for movies only)
+                    if (size <= 0) if category_name == "TV" else not minimum_size <= size <= maximum_size:
                         continue
 
                     row["size_bytes"] = str(size)
@@ -692,7 +696,6 @@ async def search_tv_eztv(query: str, limit: int = 30) -> list[dict[str, Any]]:
             "infoUrl": "",
             "sourceUrl": "",
         })
-    results = [row for row in results if _in_size_window(row.get("size"))]
     _, season, episode = _media_search_parts(query)
     if season is not None:
         results = [
@@ -935,7 +938,7 @@ async def search_limetorrents(
         )
 
         results: list[dict[str, Any]] = []
-        for row in [r for r in parsed_rows if _in_size_window(r.get("size_bytes"))][:min(max(limit, 1), 30)]:
+        for row in [r for r in parsed_rows if _in_size_window(r.get("size_bytes"), query)][:min(max(limit, 1), 30)]:
             detail_url = str(row.get("detail_url") or "").strip()
             if not detail_url:
                 continue
@@ -1106,7 +1109,7 @@ async def search_knaben(
             "category": category,
         })
 
-    results = [row for row in results if _in_size_window(row.get("size"))]
+    results = [row for row in results if _in_size_window(row.get("size"), query)]
     results.sort(
         key=lambda row: (
             1 if _normalize_title(str(row["title"])).startswith(_normalize_title(title_query)) else 0,
@@ -1148,7 +1151,7 @@ async def search_torrents_csv(query: str, limit: int) -> dict[str, Any]:
             if not re.fullmatch(r"[0-9a-f]{40}", h):
                 continue
             title = str(item.get("name") or "Untitled").strip()
-            if not title or not _in_size_window(item.get("size_bytes")):
+            if not title or not _in_size_window(item.get("size_bytes"), query):
                 continue
             results.append({
                 "guid": f"torrents-csv-{h}",
@@ -1203,7 +1206,7 @@ async def search_apibay(query: str, limit: int) -> dict[str, Any]:
             if not re.fullmatch(r"[0-9a-f]{40}", h):
                 continue
             title = str(item.get("name") or "Untitled").strip()
-            if not title or not _in_size_window(item.get("size")):
+            if not title or not _in_size_window(item.get("size"), query):
                 continue
             results.append({
                 "guid": f"apibay-{h}",
@@ -1353,7 +1356,7 @@ def _search_quality_filter(item: dict[str, Any], query: str) -> bool:
         return False
 
     size = int(item.get("size") or 0)
-    return MIN_SEARCH_RESULT_SIZE_BYTES <= size <= MAX_SEARCH_RESULT_SIZE_BYTES
+    return _in_size_window(size, query)
 
 
 def _title_relevance(title: str, query: str) -> tuple[int, int]:

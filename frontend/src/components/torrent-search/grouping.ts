@@ -259,6 +259,11 @@ export function torrentQualityDetails(result: TorrentSearchResult): { key: strin
   return { key: label.toLowerCase().replace(/[^a-z0-9]+/g, '-'), label, rank };
 }
 
+// A season / episode / complete-series release. Series are far bigger than movies, so the size window
+// (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB) is for movies only and never hides these.
+const SERIES_RELEASE = /(?:^|[^a-z0-9])(?:s\d{1,2}(?:[ ._-]?e\d{1,3})?|seasons?[ ._-]?\d{1,2}|complete[ ._-]series)(?:$|[^a-z0-9])/i;
+export const isSeriesRelease = (result: Pick<TorrentSearchResult, 'title'>): boolean => SERIES_RELEASE.test(String(result.title || ''));
+
 export function filterTorrentSearchResults(
   results: TorrentSearchResult[],
   options: { minSizeBytes: number; maxSizeBytes: number; resolutionFilter: string | null },
@@ -269,7 +274,11 @@ export function filterTorrentSearchResults(
     const size = Number(result.size) || 0;
     const seeders = Number(result.seeders);
     if (!Number.isFinite(seeders) || seeders <= 0) return false;
-    if (size < options.minSizeBytes || size > options.maxSizeBytes) return false;
+    if (isSeriesRelease(result)) {
+      if (size <= 0) return false;                         // any known size is fine for a series
+    } else if (size < options.minSizeBytes || size > options.maxSizeBytes) {
+      return false;                                        // the size window is for movies
+    }
     const releaseText = `${String(result.title || '')} ${String(result.quality || '')}`;
     const qualityText = `${String(result.quality || '')} ${String(result.title || '')}`;
     if (/(?:^|[^a-z0-9])3[ ._-]*d(?:$|[^a-z0-9])/i.test(qualityText)) return false;

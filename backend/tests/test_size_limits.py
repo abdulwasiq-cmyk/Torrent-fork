@@ -122,3 +122,17 @@ def test_offline_scans_can_switch_the_size_window_off():
     finally:
         _SIZE_WINDOW_DISABLED.reset(token)
     assert not _in_size_window(40 * GB)
+
+
+def test_size_window_is_for_movies_only_series_queries_keep_any_known_size():
+    pytest.importorskip("httpx")
+    from core.settings import MAX_SEARCH_RESULT_SIZE_BYTES as hi
+    from search.search_providers import _in_size_window, _search_quality_filter
+
+    assert not _in_size_window(hi + GB, "Heat 1995")                        # a movie query: the window applies
+    assert _in_size_window(hi + 40 * GB, "Reacher S02")                     # a series query: no upper bound
+    assert _in_size_window(30 * GB, "Reacher season 1") and _in_size_window(1, "Reacher S01E02")
+    assert not _in_size_window(0, "Reacher S02")                            # but the size must be known
+    pack = {"title": "Reacher S02 2160p WEB-DL", "size": 40 * GB, "category": "TV"}
+    assert _search_quality_filter(pack, "Reacher S02")
+    assert not _search_quality_filter({**pack, "title": "Heat 1995 2160p", "category": "Movies"}, "Heat 1995")

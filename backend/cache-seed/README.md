@@ -164,7 +164,7 @@ complete-series packs; each release has `scope` = `season` | `complete` and `sea
 
 ### Size window (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB)
 
-Which releases the Prepare card shows by size is one setting, read once in `backend/core/settings.py`
+Which MOVIE releases the Prepare card shows by size is one setting (it never applies to series: season packs of any size are always allowed), read once in `backend/core/settings.py`
 (env vars win, then `search_limits.json`; default 250 MB .. 2 GB). Change it with an env var and restart:
 `TORRENT_MAX_SIZE_GB=5` (decimals allowed). It is applied in layers, each as early as it can be without
 dropping anything relevant:
@@ -178,5 +178,5 @@ dropping anything relevant:
 4. **Browser**: `index.html` is served with `window.__SEARCH_LIMITS__` (no extra request); the Prepare filters and the
    Prepare-card cache key use it, so a changed window never reuses results cached under another one.
 
-TV season packs (Webtor) are not size-filtered. To store a different range, rebuild with
+Series are never size-filtered: the Webtor packs, and any search whose query names a season or episode (`S02`, `Season 1`), keep every known size. To store a different range, rebuild with
 `TORRENT_CACHE_MAX_SIZE_GB=20 python3 -I scripts/migrate_torrent_cache.py` to cap what is stored (default: no cap; this keeps the `tv:` entries).

@@ -252,7 +252,7 @@ def _size_limit_env(name: str) -> float | None:
     return value
 
 
-# Size window for torrents shown on the Prepare card. One setting, read here once, and every
+# Size window for MOVIE torrents shown on the Prepare card (series are never size-filtered). One setting, read here once, and every
 # backend layer (providers, cached lookups, prebuilt cache routes) and the frontend (injected
 # into index.html) use it.
 #   TORRENT_MIN_SIZE_MB   smallest release to show (default: search_limits.json)
