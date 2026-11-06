@@ -125,7 +125,8 @@ def test_committed_torrent_files_are_valid_small_and_match_their_section_rows():
             if key.startswith("tv:"):
                 assert all(r["size"] > 0 for r in entry["releases"])
             else:   # "movie:<id>", and "ty:<title>|<year>" for a movie without a TMDB id
-                assert all(doc["limits"]["minSizeBytes"] <= r["size"] <= doc["limits"]["maxSizeBytes"] for r in entry["releases"])
+                top = doc["limits"]["maxSizeBytes"]    # null = no upper limit
+                assert all(doc["limits"]["minSizeBytes"] <= r["size"] and (top is None or r["size"] <= top) for r in entry["releases"])
         # torrent data must never leak back into the fast metadata files
         for field in ("magnetUrl", "infoHash", "torrentMatches", "downloadUrl"):
             assert field not in metadata_text(section), f"{section}.json must not contain {field}"
@@ -144,3 +145,13 @@ def test_size_bands_keep_in_window_releases_when_big_ones_have_more_seeders():
     in_window = [r for r in kept if r["size"] <= 2 * 1024 * MB]
     assert len(in_window) == 3, "the 1.5 GB releases survive although the 4 GB ones out-seed them"
     assert sum(1 for r in kept if r["size"] > 3 * 1024 * MB) == M.MAX_RELEASES_PER_RESOLUTION
+
+
+def test_no_upper_ceiling_by_default_but_one_can_be_set(monkeypatch):
+    monkeypatch.delenv("TORRENT_CACHE_MAX_SIZE_GB", raising=False)
+    assert M.load_limits()["maxSizeBytes"] is None
+    huge = release("Heat 1995 2160p REMUX", size=80 * 1024 * MB, seeders=50)
+    assert [r["size"] for r in M.select_releases([huge], "Heat", M.load_limits())] == [80 * 1024 * MB]
+    monkeypatch.setenv("TORRENT_CACHE_MAX_SIZE_GB", "20")
+    assert M.load_limits()["maxSizeBytes"] == 20 * 1024 ** 3
+    assert M.select_releases([huge], "Heat", M.load_limits()) == []

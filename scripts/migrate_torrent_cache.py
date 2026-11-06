@@ -30,7 +30,7 @@ Sources (all merged, de-duplicated by infoHash):
 
 Only movie rows are migrated (the Prepare card is movie-only; TV uses NexStream).
 Every release is filtered the way the Prepare card filters it (stored size range
-TORRENT_CACHE_MIN_SIZE_MB..TORRENT_CACHE_MAX_SIZE_GB, default 100 MB..10 GB, wider than the display window, no cam/telesync/screener, release title must contain the movie
+at least TORRENT_CACHE_MIN_SIZE_MB (default 100 MB), no upper limit unless TORRENT_CACHE_MAX_SIZE_GB is set, no cam/telesync/screener, release title must contain the movie
 title), so nothing is stored that the UI would hide.
 
 Standard library only. Run:  python3 -I scripts/migrate_torrent_cache.py
@@ -267,7 +267,7 @@ def select_releases(candidates: list[dict], title: str, limits: dict) -> list[di
     usable = []
     for release in candidates:
         size = release["size"]
-        if size < limits["minSizeBytes"] or size > limits["maxSizeBytes"]:
+        if size < limits["minSizeBytes"] or (limits["maxSizeBytes"] is not None and size > limits["maxSizeBytes"]):
             continue
         if LOW_QUALITY.search(release["title"]):
             continue
@@ -379,7 +379,9 @@ def load_limits() -> dict:
     title is served (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB), so store a generous superset."""
     return {
         "minSizeBytes": int(float(os.getenv("TORRENT_CACHE_MIN_SIZE_MB", "100")) * 1024 * 1024),
-        "maxSizeBytes": int(float(os.getenv("TORRENT_CACHE_MAX_SIZE_GB", "10")) * 1024 ** 3),
+        # No upper ceiling by default: any size is stored (per size band, so huge releases cannot crowd out small
+        # ones) and TORRENT_MAX_SIZE_GB decides what is shown. Set TORRENT_CACHE_MAX_SIZE_GB only to cap file growth.
+        "maxSizeBytes": int(float(os.getenv("TORRENT_CACHE_MAX_SIZE_GB") or 0) * 1024 ** 3) or None,
     }
 
 
@@ -403,7 +405,8 @@ def main(argv: list[str] | None = None) -> int:
     prebuilt = load_regional_prebuilt(pool, args.seed_dir)
     print(f"pool: {old} old records + {bolly} bollywood matches + {prebuilt} prebuilt rows "
           f"-> {len(pool.releases)} unique torrents ({dict(pool.stats)})")
-    print(f"cache range: {limits['minSizeBytes'] / 1024**2:.0f} MiB .. {limits['maxSizeBytes'] / 1024**3:.0f} GiB (display window is applied when serving)")
+    top = "no upper limit" if limits["maxSizeBytes"] is None else f"{limits['maxSizeBytes'] / 1024**3:.0f} GiB"
+    print(f"cache range: {limits['minSizeBytes'] / 1024**2:.0f} MiB .. {top} (display window is applied when serving)")
 
     failures = 0
     totals: Counter = Counter()

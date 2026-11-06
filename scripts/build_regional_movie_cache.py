@@ -30,8 +30,9 @@ TORRENT_LIMIT = 50
 # Set REGIONAL_CACHE_TORRENT_SCAN=false to refresh only catalogue pages and keep the
 # torrent matches from the previous build (torrent sites are slow/blocked on CI runners).
 TORRENT_SCAN = os.getenv("REGIONAL_CACHE_TORRENT_SCAN", "true").strip().lower() not in ("0", "false", "no", "off")
-# Stored range, wider than the display window (TORRENT_MAX_SIZE_GB): the window is applied when the cache is read.
-MAX_SIZE = int(float(os.getenv("REGIONAL_CACHE_MAX_SIZE_GB", "10")) * 1024**3)
+# No upper ceiling by default: the display window (TORRENT_MAX_SIZE_GB) is applied when the cache is read.
+# Set REGIONAL_CACHE_MAX_SIZE_GB only to cap what is stored.
+MAX_SIZE = int(float(os.getenv("REGIONAL_CACHE_MAX_SIZE_GB") or 0) * 1024**3)   # 0 = no ceiling
 # Same lower bound the app applies when it reads saved torrents; a row below it would be hidden anyway.
 MIN_SIZE = int(os.getenv("REGIONAL_CACHE_MIN_SIZE_MB", "100")) * 1024**2
 SCAN_VERSION = 2  # bump to force one re-scan of older (possibly too strict) "empty" results
@@ -207,7 +208,7 @@ def usable_rows(rows, title):
         except (TypeError, ValueError):
             size = 0
         has_link = bool(row.get("magnetUrl") or row.get("downloadUrl") or row.get("sourceUrl"))
-        if not has_link or size < MIN_SIZE or size > MAX_SIZE or BAD_QUALITY.search(name):
+        if not has_link or size < MIN_SIZE or (MAX_SIZE and size > MAX_SIZE) or BAD_QUALITY.search(name):
             continue
         if any(t in norm(name) or t in norm(media) for t in targets):
             good.append(row)

@@ -173,10 +173,10 @@ dropping anything relevant:
    *before* sorting and truncating to its `limit`, so a 4 GB release cannot take a slot an in-window one could use.
 2. **Merge gate** (`_search_quality_filter`) and the catalogue/prebuilt readers (`misc_routes`, `catalogues_extra`): same constants.
 3. **Cached torrent files** (`torrent_options.lookup`): the window is applied while a title is served, *before*
-   the 12-result cap. The files store a wider range (100 MB .. 10 GB, kept per size band so big releases cannot
+   the 12-result cap. The files store releases of any size above 100 MB (no upper limit; kept per size band so big releases cannot
    crowd out smaller ones), so raising the limit reveals data that is already stored.
 4. **Browser**: `index.html` is served with `window.__SEARCH_LIMITS__` (no extra request); the Prepare filters and the
    Prepare-card cache key use it, so a changed window never reuses results cached under another one.
 
 TV season packs (Webtor) are not size-filtered. To store a different range, rebuild with
-`TORRENT_CACHE_MAX_SIZE_GB=12 python3 -I scripts/migrate_torrent_cache.py` (this keeps the `tv:` entries).
+`TORRENT_CACHE_MAX_SIZE_GB=20 python3 -I scripts/migrate_torrent_cache.py` to cap what is stored (default: no cap; this keeps the `tv:` entries).
