@@ -14,7 +14,11 @@ def cand(title, seeders=10, h="a", size=5 * 1024**3):
 
 def test_classify_packs_and_rejects_episodes_and_other_shows():
     assert B.classify("Reacher S02 1080p WEB-DL", "Reacher") == ("season", 2)
-    assert B.classify("Reacher.Season.1.Complete.720p", "Reacher") == ("complete", 0)
+    assert B.classify("Reacher.Season.1.Complete.720p", "Reacher") == ("season", 1)        # complete SEASON 1
+    assert B.classify("WandaVision.S01.COMPLETE.2160p.WEB-DL", "WandaVision") == ("season", 1)
+    assert B.classify("Loki.S02.COMPLETE.1080p", "Loki") == ("season", 2)
+    assert B.classify("Reacher Complete Series 1080p", "Reacher") == ("complete", 0)
+    assert B.classify("Reacher S01 S02 S03 1080p", "Reacher") == ("complete", 0)
     assert B.classify("Reacher S01-S03 2160p", "Reacher") == ("complete", 0)
     assert B.classify("Reacher Seasons 1-3", "Reacher") == ("complete", 0)
     assert B.classify("Reacher S02E04 1080p", "Reacher") is None
@@ -29,8 +33,8 @@ def test_select_keeps_best_per_season_orders_complete_first_and_dedupes():
             cand("Reacher Complete Series 1080p", 7, "6"), cand("Reacher S02 1080p dup", 9, "5"),
             cand("Reacher S01E01 1080p", 99, "7"), {"title": "Reacher S03", "seeders": 3}]
     out = B.select_releases(rows, "Reacher")
-    assert [(r["scope"], r["season"]) for r in out] == [("complete", 0), ("season", 1), ("season", 1), ("season", 1), ("season", 2)]
-    assert [r["infoHash"][0] for r in out if r["season"] == 1] == ["2", "3", "1"]      # best seeded first, capped at 3
+    assert [(r["scope"], r["season"]) for r in out] == [("complete", 0), ("season", 1), ("season", 1), ("season", 1), ("season", 1), ("season", 2)]
+    assert [r["infoHash"][0] for r in out if r["season"] == 1] == ["2", "3", "1", "4"]  # one per resolution, best seeded first
 
 
 def test_entry_omits_season_for_complete_and_merge_keeps_movies():
@@ -80,3 +84,11 @@ def test_discover_ignores_episodes_and_other_shows_when_counting_misses():
 
     asyncio.run(B.discover("Show", spy))
     assert asked == ["Show complete", "Show S01", "Show Season 1", "Show S02", "Show Season 2"]
+
+
+def test_resolution_variety_beats_raw_seeders():
+    rows = [cand(f"Show S01 720p v{i}", 100 - i, h=f"{i:x}") for i in range(6)] + [
+        cand("Show S01 1080p", 3, "a"), cand("Show S01 2160p", 1, "b")]
+    kept = B.select_releases(rows, "Show", per_bucket=4)
+    assert {B.resolution_of(r["title"]) for r in kept} == {"720p", "1080p", "2160p"}
+    assert len(kept) == 4

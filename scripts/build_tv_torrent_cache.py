@@ -38,7 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SEED_DIR = ROOT / "backend" / "cache-seed"
 SECTIONS = ("hollywood", "bollywood", "marvel", "dc", "highest-rated", "korean", "pakistani", "anime", "favourites")
-PER_BUCKET = 3        # releases kept per season (or for "complete")
+PER_BUCKET = 4        # releases kept per season (or for "complete"): one per resolution first, then the best seeded
 MAX_PER_SHOW = 40     # must stay <= torrent_options.MAX_TV_RESULTS
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 
@@ -48,6 +48,8 @@ MULTI_SEASON = re.compile(
     r"(?:\bs0*\d{1,2}[ ._-]?(?:-|to|&|\+)[ ._-]?s?0*\d{1,2}\b|\bseasons?[ ._-]?0*\d{1,2}[ ._-]?(?:-|to|&|\+)[ ._-]?0*\d{1,2}\b)",
     re.IGNORECASE,
 )
+SEASON_TOKEN = re.compile(r"\bs0*(\d{1,2})\b", re.IGNORECASE)
+RESOLUTION = re.compile(r"\b(2160p|1440p|1080p|720p|576p|480p|4k|8k)\b", re.IGNORECASE)
 COMPLETE = re.compile(r"\b(?:complete|full[ ._-]?series|all[ ._-]?seasons|the[ ._-]?complete)\b", re.IGNORECASE)
 BAD_QUALITY = re.compile(r"\b(?:cam|hdcam|telesync|telecine|screener|workprint)\b", re.IGNORECASE)
 
@@ -74,16 +76,30 @@ def classify(release_title: str, show_title: str) -> tuple[str, int] | None:
         return None
     if BAD_QUALITY.search(title) or EPISODE.search(title):
         return None
-    if MULTI_SEASON.search(title) or COMPLETE.search(title):
+    if MULTI_SEASON.search(title) or len({int(n) for n in SEASON_TOKEN.findall(title)}) >= 2:
         return ("complete", 0)
+    # "Show.S01.COMPLETE" is a complete SEASON 1, not the complete series: a season number wins over the word.
     match = SEASON.search(title)
     if match and 0 < int(match.group(1)) < 100:
         return ("season", int(match.group(1)))
+    if COMPLETE.search(title):
+        return ("complete", 0)
     return None
 
 
+def resolution_of(title: str) -> str:
+    match = RESOLUTION.search(title or "")
+    value = match.group(1).lower() if match else "other"
+    return {"4k": "2160p", "8k": "2160p", "1440p": "1080p", "576p": "480p"}.get(value, value)
+
+
 def select_releases(candidates: list[dict], show_title: str, per_bucket: int = PER_BUCKET, cap: int = MAX_PER_SHOW) -> list[dict]:
-    """Best-seeded packs per season (and per 'complete'), distinct by info hash, capped."""
+    """Per season (and per 'complete'): the best-seeded pack of each resolution, then the next best
+    seeded up to ``per_bucket``. Distinct by info hash, capped per show.
+
+    Picking by resolution first matters: the top three by seeders can all be 720p, which would hide the 1080p and 4K
+    packs a user picking a quality on the card is looking for.
+    """
     buckets: dict[tuple[str, int], list[dict]] = defaultdict(list)
     seen: set[str] = set()
     for item in sorted(candidates, key=lambda c: (-int(c.get("seeders") or 0), -int(c.get("leechers") or 0))):
@@ -94,12 +110,17 @@ def select_releases(candidates: list[dict], show_title: str, per_bucket: int = P
         if scope is None:
             continue
         seen.add(digest)
-        if len(buckets[scope]) < per_bucket:
-            buckets[scope].append({**item, "infoHash": digest, "scope": scope[0], "season": scope[1]})
+        buckets[scope].append({**item, "infoHash": digest, "scope": scope[0], "season": scope[1]})
     ordered = sorted(buckets, key=lambda scope: (scope[0] != "complete", scope[1]))
     out: list[dict] = []
     for scope in ordered:
-        out.extend(buckets[scope])
+        rows = buckets[scope]          # already best-seeded first
+        first_per_resolution: dict[str, dict] = {}
+        for row in rows:
+            first_per_resolution.setdefault(resolution_of(row["title"]), row)
+        picked = list(first_per_resolution.values())[:per_bucket]
+        picked += [row for row in rows if row not in picked][: max(0, per_bucket - len(picked))]
+        out.extend(sorted(picked, key=lambda row: (-int(row.get("seeders") or 0), row["infoHash"])))
     return out[:cap]
 
 
