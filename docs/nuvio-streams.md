@@ -1,11 +1,12 @@
-# HD downloads from a self-hosted Nuvio Streams add-on
+# HD streams and downloads from a self-hosted Nuvio Streams add-on
 
-The movie card's **Download HD** button (quality chips, direct links to the file host) comes from the
+The movie card's **Play HD** and **Download HD** buttons (quality chips, direct links to the file host) comes from the
 [Nuvio Streams add-on](https://github.com/tapframe/NuvioStreamsAddon) (MIT). It is a separate Node service that
 runs on the VPS next to this app; the app only calls it. Without `NUVIO_URL` the button never appears.
 
 What to expect (tested on the VPS): about 5-15 s per title, Hollywood titles mostly, Indian titles often nothing.
-Files are 2-50 GB HEVC MKV, so the button is *download* only (browsers cannot play them). Only the 4KHDHub
+Files are 2-50 GB HEVC MKV, often with DTS/Dolby audio. **Download HD** saves the file. **Play HD** tries the browser and,
+if it cannot decode the file or it plays without sound, offers VLC and MX Player (MX Player on Android only) and a copy-link button. Only the 4KHDHub
 provider worked at the time of writing; the others are dead or blocked from datacenter addresses.
 
 ## 1. Run the add-on on the VPS

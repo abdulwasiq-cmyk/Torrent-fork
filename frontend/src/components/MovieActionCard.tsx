@@ -5,6 +5,7 @@ import type { NuvioStreamOption, TorrentSearchResult } from '../api/types.ts';
 import { formatBytes } from '../utils/formatters.ts';
 import { torrentQualityDetails, torrentResultKey } from './torrent-search/grouping.ts';
 import { copyMagnetAndOpenWebtor } from './torrent-search/webtor.ts';
+import { HdPlayerModal } from './HdPlayerModal.tsx';
 
 export interface MovieActionChip {
   key: string;
@@ -53,10 +54,10 @@ export const torrentChip = (row: TorrentSearchResult): MovieActionChip => ({
  *   Play      the existing Vidrift / NexStream playback
  *   Prepare   Seedr, torrents up to the size limit (quality chips)
  *   Webtor    torrents above the size limit: copies the magnet and opens Webtor (quality chips)
- *   Download HD  direct file links from the Nuvio Streams add-on (quality chips)
- * A button is rendered only when its source has something; the Webtor and Download HD lookups start when this
+ *   Play HD / Download HD  the Nuvio Streams add-on's direct file links (one set of quality chips). Play HD tries the
+ *               browser and falls back to VLC / MX Player (see HdPlayerModal); the files are often HEVC with DTS/Dolby audio.
+ * A button is rendered only when its source has something; the Webtor and HD lookups start when this
  * card opens (never on page load) and their buttons appear when they return.
- * "Play HD" is intentionally absent: the add-on's files are HEVC MKV, which browsers cannot play.
  */
 export const MovieActionCard: React.FC<MovieActionCardProps> = ({ title, titleHref, year, tmdbId, onClose, play, prepare, prepared }) => {
   const [large, setLarge] = useState<TorrentSearchResult[]>([]);
@@ -66,10 +67,11 @@ export const MovieActionCard: React.FC<MovieActionCardProps> = ({ title, titleHr
   const [hdKey, setHdKey] = useState('');
   const [hdLoading, setHdLoading] = useState(false);
   const [largeLoading, setLargeLoading] = useState(false);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    setLarge([]); setLargeKey(''); setHd([]); setHdKey(''); setHint('');
+    setLarge([]); setLargeKey(''); setHd([]); setHdKey(''); setHint(''); setPlaying(false);
     setLargeLoading(true);
     void api.getTorrentOptions({ tmdbId, title, year }, controller.signal, 'all', 'movie', true)
       .then(rows => { if (!controller.signal.aborted) { setLarge(rows); setLargeKey(rows[0] ? torrentResultKey(rows[0]) : ''); } })
@@ -158,13 +160,20 @@ export const MovieActionCard: React.FC<MovieActionCardProps> = ({ title, titleHr
 
         {selectedHd && (
           <div>
-            <a href={selectedHd.url} target="_blank" rel="noreferrer noopener" download={selectedHd.filename || undefined} title={selectedHd.filename}
-              className="flex w-full items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25">
-              <Download className="h-3.5 w-3.5" />Download HD
-            </a>
-            <Chips chips={hd.map(option => ({ key: option.key, label: option.label, title: option.filename }))} selectedKey={hdKey} onSelect={setHdKey} label={`Download HD quality for ${title}`} />
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => setPlaying(true)} title="Play in the browser; if it cannot, open it in VLC or MX Player"
+                className="flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25">
+                <Play className="h-3.5 w-3.5 fill-current" />Play HD
+              </button>
+              <a href={selectedHd.url} target="_blank" rel="noreferrer noopener" download={selectedHd.filename || undefined} title={selectedHd.filename}
+                className="flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25">
+                <Download className="h-3.5 w-3.5" />Download HD
+              </a>
+            </div>
+            <Chips chips={hd.map(option => ({ key: option.key, label: option.label, title: option.filename }))} selectedKey={hdKey} onSelect={setHdKey} label={`HD quality for ${title}`} />
           </div>
         )}
+        {playing && selectedHd && <HdPlayerModal title={title} option={selectedHd} onClose={() => setPlaying(false)} />}
 
         {checking && !nothing && <div className="text-[10px] text-slate-500" role="status">Checking more downloads…</div>}
         {nothing && (
