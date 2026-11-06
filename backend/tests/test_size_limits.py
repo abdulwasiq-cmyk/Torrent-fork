@@ -109,3 +109,16 @@ def test_provider_size_gate_boundaries():
     assert _in_size_window(lo) and _in_size_window(hi) and _in_size_window(str(lo))
     assert not _in_size_window(lo - 1) and not _in_size_window(hi + 1)
     assert not _in_size_window(0) and not _in_size_window(None) and not _in_size_window("n/a")
+
+
+def test_offline_scans_can_switch_the_size_window_off():
+    pytest.importorskip("httpx")
+    from search.search_providers import _SIZE_WINDOW_DISABLED, _in_size_window
+
+    assert not _in_size_window(40 * GB)                    # a season pack is outside the movie window
+    token = _SIZE_WINDOW_DISABLED.set(True)
+    try:
+        assert _in_size_window(40 * GB) and _in_size_window(0)
+    finally:
+        _SIZE_WINDOW_DISABLED.reset(token)
+    assert not _in_size_window(40 * GB)

@@ -46,3 +46,37 @@ def test_tv_rows_only_series_deduped():
     doc = {"subsections": {"a": {"mediaType": "tv", "results": [{"id": 5, "title": "A"}, {"tmdbId": 5, "title": "A"}]},
                            "b": {"mediaType": "movie", "results": [{"id": 6, "title": "M"}]}}}
     assert [r["title"] for r in B.tv_rows(doc)] == ["A"]
+
+
+import asyncio
+
+
+def test_discover_asks_complete_then_each_season_and_stops_after_two_misses():
+    asked = []
+    counter = iter("0123456789abcdef")
+
+    async def searcher(query):
+        asked.append(query)
+        packs = {"Show complete": ["Show Complete Series 1080p"], "Show S01": ["Show S01 1080p"], "Show S02": ["Show S02 720p"],
+                 "Show Season 3": ["Show Season 3 1080p"]}
+        return [cand(t, 5, h=next(counter)) for t in packs.get(query, [])]
+
+    rows = asyncio.run(B.discover("Show", searcher))
+    assert asked == ["Show complete", "Show S01", "Show S02", "Show S03", "Show Season 3", "Show S04", "Show Season 4", "Show S05", "Show Season 5"]
+    kept = B.select_releases(rows, "Show")
+    assert [(r["scope"], r["season"]) for r in kept] == [("complete", 0), ("season", 1), ("season", 2), ("season", 3)]
+
+
+def test_discover_ignores_episodes_and_other_shows_when_counting_misses():
+    async def searcher(query):
+        return [cand("Show S01E01 1080p", 99, "1"), cand("Other S01 1080p", 99, "2")]
+
+    asked = []
+    inner = searcher
+
+    async def spy(query):
+        asked.append(query)
+        return await inner(query)
+
+    asyncio.run(B.discover("Show", spy))
+    assert asked == ["Show complete", "Show S01", "Show Season 1", "Show S02", "Show Season 2"]

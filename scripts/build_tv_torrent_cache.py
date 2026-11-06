@@ -8,7 +8,7 @@ magnet is copied, and Webtor opens. Nothing here runs in the app; it is an offli
 (it needs network access, so run it on the VPS):
 
     cd /path/to/Torrent-Studio
-    python3 -I scripts/build_tv_torrent_cache.py --section hollywood --limit 5 --dry-run   # look first
+    python3 -I scripts/build_tv_torrent_cache.py --section hollywood --limit 5 --dry-run --debug   # look first
     python3 -I scripts/build_tv_torrent_cache.py                                          # all nine sections
 
 It is resumable: titles that already have a ``tv:`` entry are skipped unless --refresh is given,
@@ -147,30 +147,75 @@ def write_atomic(path: Path, document: dict) -> int:
     return len(text.encode())
 
 
+# --------------------------------------------------------------------------- discovery
+MAX_SEASONS = 15
+Searcher = "Callable[[str], Awaitable[list[dict]]]"
+
+
+async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=None) -> list[dict]:
+    """Find packs for one show with targeted queries, so a long-running show's early seasons are
+    not buried under thousands of episode torrents.
+
+    ``searcher(query)`` returns raw release rows for a query string. Queries, in order:
+      "<title> complete"                       the complete-series pack(s)
+      "<title> S01", "<title> S02", ...        one query per season (a token match, so S01E05 episodes
+                                               are not returned), falling back to "<title> Season N"
+    It stops after two seasons in a row with no pack, so it adapts to the show's length.
+    """
+    seen: list[dict] = []
+    log = log or (lambda *_: None)
+
+    async def ask(query: str, wanted) -> int:
+        rows = await searcher(query)
+        hits = [r for r in rows if classify(r.get("title"), title) == wanted]
+        log(query, len(rows), len(hits), [r.get("title") for r in rows if r not in hits][:3])
+        seen.extend(rows)
+        return len(hits)
+
+    await ask(f"{title} complete", ("complete", 0))
+    misses = 0
+    for number in range(1, max_seasons + 1):
+        wanted = ("season", number)
+        found = await ask(f"{title} S{number:02d}", wanted) or await ask(f"{title} Season {number}", wanted)
+        misses = 0 if found else misses + 1
+        if misses >= 2:
+            break
+    return seen
+
+
 # --------------------------------------------------------------------------- live search (VPS only)
-async def search_show(title: str, year: str) -> list[dict]:
-    """Query the app's own torrent providers (needs the backend's dependencies and network)."""
+def make_searcher(delay: float):
+    """A searcher backed by the app's own providers (needs the backend's dependencies and network)."""
     sys.path.insert(0, str(ROOT / "backend"))
     from core.shared import _MANUAL_TORRENT_SEARCH            # noqa: PLC0415 (backend only)
     from search import search_providers as providers          # noqa: PLC0415
 
     _MANUAL_TORRENT_SEARCH.set(True)
-    found: list[dict] = []
-    for query in (f"{title} complete series", f"{title} season", f"{title} S01"):
+    providers._SIZE_WINDOW_DISABLED.set(True)                  # season packs are far above the movie size window
+
+    async def searcher(query: str) -> list[dict]:
+        rows: list[dict] = []
         try:
-            found.extend(await providers.search_knaben(query, 100))
+            # provider_query = the exact text sent to Knaben, so "Reacher S02" is a token match for season packs
+            rows.extend(await providers.search_knaben(query, 150, provider_query=query))
         except Exception as exc:                               # a provider hiccup must not stop the run
             print(f"    knaben failed for {query!r}: {exc}", file=sys.stderr)
-    try:
-        found.extend((await providers.search_apibay(f"{title} complete", 100)).get("results", []))
-    except Exception as exc:
-        print(f"    apibay failed for {title!r}: {exc}", file=sys.stderr)
-    return found
+        if query.endswith(" complete"):
+            try:
+                rows.extend((await providers.search_apibay(query, 100)).get("results", []))
+            except Exception as exc:
+                print(f"    apibay failed for {query!r}: {exc}", file=sys.stderr)
+        await asyncio.sleep(delay)
+        return rows
+
+    return searcher
 
 
 async def run(args: argparse.Namespace) -> int:
     built_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     totals: Counter = Counter()
+    searcher = make_searcher(args.delay)
+    gate = asyncio.Semaphore(max(1, args.workers))
     for section in args.section or SECTIONS:
         metadata_path = args.seed_dir / f"{section}.json"
         target = args.seed_dir / f"{section}-torrents.json"
@@ -183,14 +228,24 @@ async def run(args: argparse.Namespace) -> int:
         if args.limit:
             todo = todo[: args.limit]
         found: dict[str, dict] = {}
-        for index, show in enumerate(todo, 1):
-            tmdb = str(show.get("tmdbId") or show.get("id"))
-            candidates = await search_show(str(show["title"]), year_of(show.get("year") or show.get("releaseDate")))
-            chosen = select_releases(candidates, str(show["title"]))
-            print(f"  {section} {index}/{len(todo)} {show['title']!r}: {len(chosen)} packs")
-            if chosen:
-                found[f"tv:{tmdb}"] = entry_for(show, chosen)
-            await asyncio.sleep(args.delay)
+
+        async def one(index: int, show: dict) -> None:
+            async with gate:
+                lines: list[str] = []
+                log = (lambda query, raw, hits, others: lines.append(
+                    f"      {query!r}: {raw} results, {hits} packs" + (f"; e.g. {others}" if args.debug and others else ""))) \
+                    if args.debug else None
+                candidates = await discover(str(show["title"]), searcher, log=log)
+                chosen = select_releases(candidates, str(show["title"]))
+                seasons = sorted({r["season"] for r in chosen if r["scope"] == "season"})
+                print(f"  {section} {index}/{len(todo)} {show['title']!r}: {len(chosen)} packs"
+                      + (f" (complete: {any(r['scope'] == 'complete' for r in chosen)}, seasons: {seasons})" if chosen else ""))
+                for line in lines:
+                    print(line)
+                if chosen:
+                    found[f"tv:{show.get('tmdbId') or show.get('id')}"] = entry_for(show, chosen)
+
+        await asyncio.gather(*(one(i, show) for i, show in enumerate(todo, 1)))
         totals.update(shows=len(rows), searched=len(todo), withPacks=len(found))
         if not args.dry_run and found:
             size = write_atomic(target, merge_section(existing, found, section, built_at))
@@ -206,7 +261,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--section", action="append", choices=SECTIONS, help="repeatable; default all nine")
     parser.add_argument("--limit", type=int, default=0, help="only the first N series per section (for a trial run)")
     parser.add_argument("--refresh", action="store_true", help="re-search series that already have an entry")
-    parser.add_argument("--delay", type=float, default=1.0, help="seconds between series")
+    parser.add_argument("--delay", type=float, default=0.5, help="seconds after every provider call")
+    parser.add_argument("--workers", type=int, default=3, help="series searched at the same time")
+    parser.add_argument("--debug", action="store_true", help="print every query with its result and pack counts")
     parser.add_argument("--dry-run", action="store_true")
     return asyncio.run(run(parser.parse_args(argv)))
 

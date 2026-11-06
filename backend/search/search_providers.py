@@ -1,6 +1,7 @@
 """Moved out of main.py (see docs/main-split-plan.md)."""
 
 import asyncio
+import contextvars
 import hashlib
 import os
 import re
@@ -41,6 +42,10 @@ _search_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _search_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
 
 
+# Set by offline scans that want releases of any size (TV season packs for Webtor are 10-60 GB).
+_SIZE_WINDOW_DISABLED: contextvars.ContextVar[bool] = contextvars.ContextVar("size_window_disabled", default=False)
+
+
 def _in_size_window(size: Any) -> bool:
     """True when a release size is inside the configured window (TORRENT_MIN_SIZE_MB..TORRENT_MAX_SIZE_GB).
 
@@ -48,6 +53,8 @@ def _in_size_window(size: Any) -> bool:
     outside the window can never be shown (the final gate drops it anyway), so it must not take
     up one of the ``limit`` slots that in-window releases could use.
     """
+    if _SIZE_WINDOW_DISABLED.get():
+        return True
     try:
         value = int(float(size or 0))
     except (TypeError, ValueError, OverflowError):
