@@ -115,3 +115,24 @@ def test_discover_keeps_only_what_each_query_asked_for():
 
     kept = B.select_releases(asyncio.run(B.discover("Show", searcher)), "Show")
     assert [(r["scope"], r["season"]) for r in kept] == [("complete", 0), ("season", 1)]
+
+
+def test_a_season_missed_by_its_own_query_is_kept_when_inside_the_found_range():
+    async def searcher(query):
+        if query == "Show complete":
+            return [cand("Show S02 1080p", 9, "1"), cand("Show S09 1080p", 50, "2")]      # S02 inside range, S09 beyond it
+        if query == "Show S01":
+            return [cand("Show S01 1080p", 9, "3")]
+        if query == "Show S03":
+            return [cand("Show S03 1080p", 9, "4")]
+        return []
+
+    kept = B.select_releases(asyncio.run(B.discover("Show", searcher)), "Show")
+    assert [(r["scope"], r["season"]) for r in kept] == [("season", 1), ("season", 2), ("season", 3)]
+
+
+def test_refresh_drops_the_old_entry_of_a_series_that_now_has_no_pack():
+    existing = {"schemaVersion": 2, "section": "x", "trackers": [], "titles": {
+        "movie:1": {"title": "M"}, "tv:7": {"title": "Old"}, "tv:8": {"title": "Kept (not searched)"}}}
+    merged = B.merge_section(existing, {}, "x", "now", replace_keys={"tv:7"})
+    assert set(merged["titles"]) == {"movie:1", "tv:8"}

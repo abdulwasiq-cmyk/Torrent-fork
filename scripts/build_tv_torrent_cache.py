@@ -168,12 +168,15 @@ def tv_rows(section_document: dict) -> list[dict]:
     return list(rows.values())
 
 
-def merge_section(existing: dict, found: dict[str, dict], section: str, built_at: str) -> dict:
-    """Return the section document with ``found`` tv entries merged in; movie entries are untouched."""
+def merge_section(existing: dict, found: dict[str, dict], section: str, built_at: str, replace_keys: set[str] | frozenset = frozenset()) -> dict:
+    """Return the section document with ``found`` tv entries merged in; movie entries are untouched.
+
+    ``replace_keys`` are the series that were (re-)searched this run: their old entry is dropped first, so a
+    series that now has no valid pack does not keep a stale one from an earlier, looser run."""
     document = dict(existing) if existing else {
         "schemaVersion": 2, "kind": "torrent-options", "section": section, "limits": {}, "trackers": [], "titles": {},
     }
-    titles = dict(document.get("titles") or {})
+    titles = {k: v for k, v in (document.get("titles") or {}).items() if k not in replace_keys}
     titles.update(found)
     trackers = list(document.get("trackers") or [])
     document.update({"builtAt": built_at, "titles": dict(sorted(titles.items())), "trackers": trackers})
@@ -204,6 +207,8 @@ async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=Non
     It stops after two seasons in a row with no pack, so it adapts to the show's length.
     """
     seen: list[dict] = []
+    strays: list[dict] = []           # single seasons returned by the "<title> complete" search
+    best_season = 0
     log = log or (lambda *_: None)
 
     async def ask(query: str, wanted) -> int:
@@ -212,7 +217,10 @@ async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=Non
         log(query, len(rows), len(hits), [r.get("title") for r in rows if r not in hits][:3])
         # Keep only what this query was asking for. A "<title> complete" search also returns single
         # seasons of unrelated shows and stray seasons ("S07"), which must not become entries.
-        seen.extend(r for r in rows if classify(r.get("title"), title) in {wanted, ("complete", 0)})
+        scopes = [(r, classify(r.get("title"), title)) for r in rows]
+        seen.extend(r for r, scope in scopes if scope in {wanted, ("complete", 0)})
+        if wanted == ("complete", 0):
+            strays.extend(r for r, scope in scopes if scope and scope[0] == "season")
         return len(hits)
 
     await ask(f"{title} complete", ("complete", 0))
@@ -221,8 +229,12 @@ async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=Non
         wanted = ("season", number)
         found = await ask(f"{title} S{number:02d}", wanted) or await ask(f"{title} Season {number}", wanted)
         misses = 0 if found else misses + 1
+        best_season = number if found else best_season
         if misses >= 2:
             break
+    # A season the per-season queries missed (Agents of S.H.I.E.L.D. S06) is still valid when it lies inside the range
+    # they found; one beyond it (a stray "S07" for a 3-season show) is dropped.
+    seen.extend(r for r in strays if classify(r.get("title"), title)[1] <= best_season)
     return seen
 
 
@@ -290,8 +302,10 @@ async def run(args: argparse.Namespace) -> int:
 
         await asyncio.gather(*(one(i, show) for i, show in enumerate(todo, 1)))
         totals.update(shows=len(rows), searched=len(todo), withPacks=len(found))
-        if not args.dry_run and found:
-            size = write_atomic(target, merge_section(existing, found, section, built_at))
+        if not args.dry_run and (found or args.refresh):
+            size = write_atomic(target, merge_section(
+                existing, found, section, built_at,
+                {f"tv:{show.get('tmdbId') or show.get('id')}" for show in todo}))
             print(f"  {section}: wrote {len(found)} series, file now {size / 1024:.1f} KiB")
     print(f"total: {totals['withPacks']}/{totals['searched']} searched series have packs"
           f"{' (dry run, nothing written)' if args.dry_run else ''}")
