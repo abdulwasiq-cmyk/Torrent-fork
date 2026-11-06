@@ -1,0 +1,19 @@
+{
+ "note": "Series that get NO torrent / Webtor card (they keep the normal Play on tap). The TV pack scanner skips them and removes any existing entry. Key = TMDB id, value = a label for humans. Add an id here, re-run the scanner for that section, commit the result.",
+ "tmdbIds": {
+  "40044": "Hulk and the Agents of S.M.A.S.H. (2013)",
+  "59427": "Avengers Assemble (2013)",
+  "34391": "Ultimate Spider-Man (2012)",
+  "38247": "Wolverine (2011)",
+  "33623": "The Avengers: Earth's Mightiest Heroes (2010)",
+  "6549": "Wolverine and the X-Men (2009)",
+  "3854": "The Spectacular Spider-Man (2008)",
+  "10079": "Spider-Man Unlimited (1999)",
+  "1130": "Silver Surfer (1998)",
+  "6332": "The Incredible Hulk (1996)",
+  "888": "Spider-Man: The Animated Series (1994)",
+  "2901": "Fantastic Four (1994)",
+  "3097": "Iron Man (1994)",
+  "4574": "X-Men: The Animated Series (1992)"
+ }
+}

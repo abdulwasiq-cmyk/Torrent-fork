@@ -136,3 +136,21 @@ def test_refresh_drops_the_old_entry_of_a_series_that_now_has_no_pack():
         "movie:1": {"title": "M"}, "tv:7": {"title": "Old"}, "tv:8": {"title": "Kept (not searched)"}}}
     merged = B.merge_section(existing, {}, "x", "now", replace_keys={"tv:7"})
     assert set(merged["titles"]) == {"movie:1", "tv:8"}
+
+
+def test_excluded_series_file_matches_real_series_and_is_removed_on_merge(tmp_path):
+    import json as _json
+    excluded = B.load_excluded()
+    assert excluded and all(k.startswith("tv:") and k[3:].isdigit() for k in excluded)
+    known = {}
+    for section in B.SECTIONS:
+        for row in B.tv_rows(_json.loads((B.SEED_DIR / f"{section}.json").read_text(encoding="utf-8"))):
+            known[f"tv:{row.get('tmdbId') or row.get('id')}"] = row["title"]
+    document = _json.loads(B.EXCLUDE_FILE.read_text(encoding="utf-8"))["tmdbIds"]
+    for tmdb, label in document.items():
+        assert known.get(f"tv:{tmdb}"), f"{tmdb} ({label}) is not a series in any section file"
+        assert known[f"tv:{tmdb}"] in label, f"{tmdb}: label {label!r} does not match {known[f'tv:{tmdb}']!r}"
+    existing = {"schemaVersion": 2, "section": "x", "trackers": [], "titles": {"tv:1": {"title": "keep"}, "tv:2": {"title": "drop"}}}
+    merged = B.merge_section(existing, {}, "x", "now", replace_keys={"tv:2"})
+    assert set(merged["titles"]) == {"tv:1"}
+    assert B.load_excluded(tmp_path / "missing.json") == set()

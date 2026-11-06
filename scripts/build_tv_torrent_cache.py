@@ -37,6 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED_DIR = ROOT / "backend" / "cache-seed"
+EXCLUDE_FILE = ROOT / "scripts" / "tv_torrent_exclude.json"
 SECTIONS = ("hollywood", "bollywood", "marvel", "dc", "highest-rated", "korean", "pakistani", "anime", "favourites")
 PER_BUCKET = 4        # releases kept per season (or for "complete"): one per resolution first, then the best seeded
 MAX_PER_SHOW = 40     # must stay <= torrent_options.MAX_TV_RESULTS
@@ -168,6 +169,15 @@ def tv_rows(section_document: dict) -> list[dict]:
     return list(rows.values())
 
 
+def load_excluded(path: Path = EXCLUDE_FILE) -> set[str]:
+    """TMDB ids of series that get no torrent entry (scripts/tv_torrent_exclude.json), as "tv:<id>" keys."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    return {f"tv:{tmdb}" for tmdb in (document.get("tmdbIds") or {})}
+
+
 def merge_section(existing: dict, found: dict[str, dict], section: str, built_at: str, replace_keys: set[str] | frozenset = frozenset()) -> dict:
     """Return the section document with ``found`` tv entries merged in; movie entries are untouched.
 
@@ -279,6 +289,8 @@ async def run(args: argparse.Namespace) -> int:
             return 1
         existing = json.loads(target.read_text(encoding="utf-8"))
         rows = tv_rows(json.loads(metadata_path.read_text(encoding="utf-8")))
+        excluded = load_excluded()
+        rows = [r for r in rows if f"tv:{str(r.get('tmdbId') or r.get('id'))}" not in excluded]
         todo = [r for r in rows if args.refresh or f"tv:{str(r.get('tmdbId') or r.get('id'))}" not in existing.get("titles", {})]
         if args.limit:
             todo = todo[: args.limit]
@@ -302,10 +314,13 @@ async def run(args: argparse.Namespace) -> int:
 
         await asyncio.gather(*(one(i, show) for i, show in enumerate(todo, 1)))
         totals.update(shows=len(rows), searched=len(todo), withPacks=len(found))
-        if not args.dry_run and (found or args.refresh):
+        stale_excluded = excluded & set(existing.get("titles", {}))
+        if stale_excluded:
+            print(f"  {section}: removing {len(stale_excluded)} excluded series from the file")
+        if not args.dry_run and (found or args.refresh or stale_excluded):
             size = write_atomic(target, merge_section(
                 existing, found, section, built_at,
-                {f"tv:{show.get('tmdbId') or show.get('id')}" for show in todo}))
+                {f"tv:{show.get('tmdbId') or show.get('id')}" for show in todo} | excluded))
             print(f"  {section}: wrote {len(found)} series, file now {size / 1024:.1f} KiB")
     print(f"total: {totals['withPacks']}/{totals['searched']} searched series have packs"
           f"{' (dry run, nothing written)' if args.dry_run else ''}")
