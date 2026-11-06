@@ -156,3 +156,32 @@ def test_tv_lookup_orders_packs_and_never_mixes_with_movies(tmp_path):
     by_title = T.lookup(("hollywood",), title="reacher", year="2022", seed_dir=tmp_path, media="tv")
     assert len(by_title) == 3
     assert T.lookup(("hollywood",), tmdb_id="5", seed_dir=tmp_path, media="anime") == []
+
+
+def test_only_large_returns_the_releases_above_the_window_for_webtor(tmp_path):
+    GB = 1024 ** 3
+    write_file(tmp_path, "hollywood", {"movie:1": {"title": "Dune", "year": 2021, "releases": [
+        release("a", seeders=9, size=1 * GB), release("b", seeders=8, size=2 * GB),
+        release("c", seeders=7, size=4 * GB), release("d", seeders=6, size=30 * GB)]}})
+    window = dict(min_size=100 * 1024 ** 2, max_size=2 * GB)
+    small = T.lookup(("hollywood",), tmdb_id="1", seed_dir=tmp_path, **window)
+    large = T.lookup(("hollywood",), tmdb_id="1", seed_dir=tmp_path, only_large=True, **window)
+    assert [r["infoHash"] for r in small] == ["a" * 40, "b" * 40]          # up to and including the limit
+    assert [r["infoHash"] for r in large] == ["c" * 40, "d" * 40]          # strictly above it
+    assert not {r["infoHash"] for r in small} & {r["infoHash"] for r in large}
+    assert all(r["magnetUrl"].startswith("magnet:?xt=urn:btih:") for r in large)
+
+
+def test_only_large_without_a_limit_returns_nothing_and_ignores_series(tmp_path):
+    write_file(tmp_path, "hollywood", {"movie:1": {"title": "Dune", "year": 2021, "releases": [release("a", size=50 * 1024 ** 3)]},
+                                       "tv:2": {"title": "Show", "year": 2020, "releases": [release("b", size=50 * 1024 ** 3, scope="season", season=1)]}})
+    assert T.lookup(("hollywood",), tmdb_id="1", seed_dir=tmp_path, only_large=True) == []
+    tv = T.lookup(("hollywood",), tmdb_id="2", seed_dir=tmp_path, media="tv", only_large=True, max_size=1)
+    assert [r["infoHash"] for r in tv] == ["b" * 40]                       # series are never split by size
+
+
+def test_only_large_is_capped(tmp_path):
+    releases = [release(chr(97 + i), seeders=50 - i, size=(5 + i) * 1024 ** 3) for i in range(15)]
+    write_file(tmp_path, "hollywood", {"movie:1": {"title": "Dune", "year": 2021, "releases": releases}})
+    large = T.lookup(("hollywood",), tmdb_id="1", seed_dir=tmp_path, only_large=True, max_size=2 * 1024 ** 3)
+    assert len(large) == T.MAX_LARGE_RESULTS

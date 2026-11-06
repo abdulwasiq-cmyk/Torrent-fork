@@ -318,3 +318,13 @@ export interface MovieOttAvailability {
   stale?: boolean;
   cacheWarning?: string;
 }
+
+/** One HD download option from the Nuvio Streams add-on (GET /api/nuvio/streams). `url` is https and already percent-encoded. */
+export interface NuvioStreamOption {
+  key: string;
+  quality: '2160p' | '1080p' | '720p' | '480p' | 'other';
+  label: string;
+  size: number;
+  filename: string;
+  url: string;
+}

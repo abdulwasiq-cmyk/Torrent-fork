@@ -271,6 +271,9 @@ SEARCH_SIZE_LIMITS_PUBLIC = {
     "minSizeMb": MIN_SEARCH_RESULT_SIZE_BYTES / (1024 * 1024),
     "maxSizeGb": MAX_SEARCH_RESULT_SIZE_BYTES / (1024 * 1024 * 1024),
 }
+# Optional HD download links from a self-hosted Nuvio Streams add-on (see catalogues/nuvio_streams.py).
+# Unset = the movie card shows no "Download HD" button. On the VPS: NUVIO_URL=http://localhost:7777
+NUVIO_URL = os.getenv("NUVIO_URL", "").strip().rstrip("/")
 SEARCH_COMPOUND_ALIASES = {
     "antman": "ant man",
     "spiderman": "spider man",

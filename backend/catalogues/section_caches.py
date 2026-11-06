@@ -4,8 +4,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from catalogues import torrent_options
-from core.settings import MAX_SEARCH_RESULT_SIZE_BYTES, MIN_SEARCH_RESULT_SIZE_BYTES
+from catalogues import nuvio_streams, torrent_options
+from core.settings import MAX_SEARCH_RESULT_SIZE_BYTES, MIN_SEARCH_RESULT_SIZE_BYTES, NUVIO_URL
 
 router = APIRouter()
 SECTION_CACHE_NAMES = frozenset({
@@ -43,6 +43,7 @@ async def api_get_torrent_options(
     title: str | None = Query(None, min_length=1, max_length=200),
     year: str = Query("", max_length=4),
     media: str = Query("movie", pattern=r"^(movie|tv)$"),
+    large: bool = Query(False, description="Movies only: the releases ABOVE the size limit (for Webtor)"),
 ) -> dict[str, Any]:
     """Releases for ONE movie (or, with ``media=tv``, one series' season packs) from the ``<section>-torrents.json`` files (Prepare click only).
 
@@ -62,7 +63,18 @@ async def api_get_torrent_options(
         media=media,
         min_size=MIN_SEARCH_RESULT_SIZE_BYTES,
         max_size=MAX_SEARCH_RESULT_SIZE_BYTES,
+        only_large=large and media == "movie",
     )
     if not rows:
         return {"status": "not_cached", "section": section, "torrentDetails": None}
     return {"status": "ready", "section": section, "torrentDetails": {"results": rows}}
+
+
+@router.get("/api/nuvio/streams")
+async def api_get_nuvio_streams(tmdb_id: str = Query(..., pattern=r"^\d{1,12}$")) -> dict[str, Any]:
+    """HD download options for ONE movie from the Nuvio Streams add-on (called when a movie card opens).
+
+    ``status`` is ``unavailable`` when NUVIO_URL is not set or nothing came back, so the card shows no button.
+    """
+    options = await nuvio_streams.lookup(NUVIO_URL, tmdb_id)
+    return {"status": "ready" if options else "unavailable", "options": options}

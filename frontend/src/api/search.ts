@@ -1,4 +1,4 @@
-import type { TorrentSearchResult, MarvelCatalogueResponse, TvCataloguePage, MovieCatalogueKey, SearchMediaMetadata, SearchMediaMetadataResponse, ImdbRatingResult, MovieCataloguePage, MovieOttAvailability, SectionCacheDocument } from './types.ts';
+import type { TorrentSearchResult, MarvelCatalogueResponse, TvCataloguePage, MovieCatalogueKey, SearchMediaMetadata, SearchMediaMetadataResponse, ImdbRatingResult, MovieCataloguePage, MovieOttAvailability, SectionCacheDocument, NuvioStreamOption } from './types.ts';
 import { API_BASE, apiFetch } from './http.ts';
 
 const sectionCacheRequests = new Map<string, Promise<SectionCacheDocument>>();
@@ -54,9 +54,12 @@ export const searchApi = {
     signal?: AbortSignal,
     section = 'all',
     media: 'movie' | 'tv' = 'movie',
+    large = false,
   ): Promise<TorrentSearchResult[]> {
     const params = new URLSearchParams();
     if (media === 'tv') params.set('media', 'tv');
+    // Movies only: the releases ABOVE the size limit, which the card offers through Webtor.
+    if (large && media === 'movie') params.set('large', 'true');
     const tmdbId = String(movie.tmdbId ?? '').trim();
     if (/^\d{1,12}$/.test(tmdbId)) params.set('tmdb_id', tmdbId);
     const year = String(movie.year ?? '').trim().slice(0, 4);
@@ -72,6 +75,21 @@ export const searchApi = {
     const data = await res.json().catch(() => null);
     const rows = data?.status === 'ready' ? data?.torrentDetails?.results : null;
     return Array.isArray(rows) ? (rows as TorrentSearchResult[]) : [];
+  },
+
+  // HD download links for ONE movie from the self-hosted Nuvio Streams add-on. Called when a movie card opens;
+  // `[]` when the server has no add-on configured or nothing was found (the card then shows no HD button).
+  async getNuvioStreams(tmdbId: number | string, signal?: AbortSignal): Promise<NuvioStreamOption[]> {
+    const id = String(tmdbId ?? '').trim();
+    if (!/^\d{1,12}$/.test(id)) return [];
+    try {
+      const res = await apiFetch('/api/nuvio/streams?tmdb_id=' + id, { signal });
+      if (!res.ok) return [];
+      const data = await res.json().catch(() => null);
+      return data?.status === 'ready' && Array.isArray(data.options) ? (data.options as NuvioStreamOption[]) : [];
+    } catch {
+      return [];
+    }
   },
 
   async searchMediaMetadata(query: string, signal?: AbortSignal): Promise<SearchMediaMetadataResponse> {

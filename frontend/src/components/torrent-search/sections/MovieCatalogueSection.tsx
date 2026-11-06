@@ -1,7 +1,8 @@
 import { Loader2 } from 'lucide-react';
 import { API_BASE } from '../../../api/client.ts';
 import { formatBytes } from '../../../utils/formatters.ts';
-import { MovieCompactCard, MoviePrepareCard, imdbTitleLink } from '../../MovieCards.tsx';
+import { MovieCompactCard, imdbTitleLink } from '../../MovieCards.tsx';
+import { MovieActionCard, torrentChip } from '../../MovieActionCard.tsx';
 import { imdbRatingKey, torrentQualityDetails, torrentResultKey } from '../grouping.ts';
 import { toCardProviders, uniqueOttProviders } from '../ottProviders.ts';
 import { cataloguePosterOverride, cataloguePosterSource, imdbFallbackForCatalogueMovie, imdbRatingForCatalogueMovie, isTheCrow2024 } from '../cataloguePosters.ts';
@@ -153,80 +154,19 @@ export function MovieCatalogueSection({ vm }: { vm: PanelModel }) {
                   (isRegionalMoviePreview ? '' : posterUrlFor(previewGroup.posterResult) || previewGroup.posterResult?.posterUrl || '')
                 );
                 const nexStreamMovieId = 'movie:' + String(movie.tmdbId || movie.id);
+                // Torrents the size limit lets through go to Seedr (Prepare). Larger ones are loaded by the card itself
+                // and offered through Webtor; HD downloads come from the Nuvio add-on.
                 return (
-                  <MoviePrepareCard
-                    key={'movie-prepare-' + String(movie.id) + '-' + posterSrc}
-                    posterSrc={posterSrc}
-                    posterAlt={previewGroup.title}
-                    providers={(() => {
-                      const availability = ottAvailabilityForMovie(movie);
-                      return availability && availability.status !== 'loading' && availability.status !== 'error'
-                        ? toCardProviders(uniqueOttProviders([
-                            ...(availability.streamingProviders || []),
-                            ...(availability.rentProviders || []),
-                            ...(availability.buyProviders || []),
-                          ]))
-                        : [];
-                    })()}
-                    onPosterClick={closeMoviePrepareCard}
-                    onPosterLoad={event => {
-                      posterLoadedRef.current.add(posterKeyFor(previewGroup.posterResult));
-                      event.currentTarget.style.display = '';
-                      event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.add('hidden');
-                    }}
-                    onPosterError={event => {
-                      const image = event.currentTarget;
-                      const originalUrl = lowQualityPosterUrl(String(
-                        movieTorrentPreviewPosterUrl ||
-                        cataloguePosterUrlsRef.current[String(movie.id)] ||
-                        cataloguePosterSource(movie) ||
-                        (isRegionalMoviePreview ? '' : previewGroup.posterResult?.posterUrl || '')
-                      ).trim(), 'w185');
-                      // The compact card retries the unmodified poster when the resized
-                      // URL fails. Do the same here so both cards show the same artwork.
-                      if (originalUrl && image.dataset.originalFallbackTried !== 'true') {
-                        const fallbackUrl = originalUrl.startsWith('/') ? API_BASE + originalUrl : originalUrl;
-                        image.dataset.originalFallbackTried = 'true';
-                        if (image.src !== new URL(fallbackUrl, window.location.origin).toString()) {
-                          image.src = fallbackUrl;
-                          return;
-                        }
-                      }
-                      const key = posterKeyFor(previewGroup.posterResult);
-                      posterLoadedRef.current.delete(key);
-                      image.style.display = 'none';
-                      image.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.remove('hidden');
-                      if (!posterBackgroundQueuedRef.current.has(key) && !posterOverrides[key]) {
-                        posterBackgroundQueuedRef.current.add(key);
-                        posterBackgroundQueueRef.current.unshift({ key, result: previewGroup.posterResult });
-                        startPosterBackgroundWorkers();
-                      }
-                    }}
-                    imdb={movieImdb}
-                    seeders={result?.seeders}
-                    indexer={result?.indexer}
-                    quality={result ? extractedQuality(result) : undefined}
+                  <MovieActionCard
+                    key={'movie-actions-' + String(movie.id)}
                     title={movie.title}
                     titleHref={movieTitleHref}
                     year={movie.year || previewGroup.year}
+                    tmdbId={movie.tmdbId || movie.id}
                     onClose={closeMoviePrepareCard}
-                    variants={previewGroup.variants.map(variant => {
-                      const quality = torrentQualityDetails(variant);
-                      const provider = String(variant.indexer || '').trim();
-                      const size = formatBytes(Number(variant.size) || 0);
-                      const seeds = Number(variant.seeders) || 0;
-                      return {
-                        key: torrentResultKey(variant),
-                        label: `${quality.label} · ${size} · ▲${seeds}${provider ? ` · ${provider}` : ''}`,
-                      };
-                    })}
-                    selectedVariantKey={result ? torrentResultKey(result) : ''}
-                    onSelectVariant={key => setSelectedMovieTorrentQualityByGroup(previous => ({ ...previous, [previewGroup.key]: key }))}
-                    variantsAriaLabel={`Choose quality for ${previewGroup.title}`}
-                    prepared={result && prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
-                    directStream={movie.directStreamBroken === true || !Number(movie.tmdbId || movie.id) ? undefined : {
-                      disabled: !Number(movie.tmdbId || movie.id) || nexStreamResolvingId === nexStreamMovieId,
-                      label: nexStreamResolvingId === nexStreamMovieId ? 'Resolving…' : 'Direct Stream',
+                    play={movie.directStreamBroken === true || !Number(movie.tmdbId || movie.id) ? undefined : {
+                      disabled: nexStreamResolvingId === nexStreamMovieId,
+                      resolving: nexStreamResolvingId === nexStreamMovieId,
                       onClick: () => {
                         const tmdbId = Number(movie.tmdbId || movie.id);
                         if (!Number.isInteger(tmdbId) || tmdbId <= 0) {
@@ -244,10 +184,14 @@ export function MovieCatalogueSection({ vm }: { vm: PanelModel }) {
                       },
                     }}
                     prepare={!result ? undefined : {
+                      chips: previewGroup.variants.map(torrentChip),
+                      selectedKey: result ? torrentResultKey(result) : '',
+                      onSelect: key => setSelectedMovieTorrentQualityByGroup(previous => ({ ...previous, [previewGroup.key]: key })),
                       isPreparing: prepareState.isPreparing,
                       disabled: !prepareState.source || prepareState.isPreparing,
                       onClick: () => void prepareMovieTorrent(result),
                     }}
+                    prepared={result && prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
                   />
                 );
               }

@@ -27,6 +27,7 @@ test('getTorrentOptions is only called from card taps and Prepare clicks', async
     if (/\.getTorrentOptions\s*\(/.test(text)) callers.push(rel(file));
   }
   assert.deepEqual(callers.sort(), [
+    'components/MovieActionCard.tsx',                               // movie second card: opened by a tap (over-the-limit torrents for Webtor)
     'components/torrent-search/TvShowTile.tsx',                     // series cards: card tapped
     'components/torrent-search/state/useFranchiseTorrentJoin.ts',   // Marvel / DC / Favourites: card opened
     'components/torrent-search/state/useMovieTorrentSearch.ts',     // regional grids: Prepare clicked
@@ -67,4 +68,13 @@ test('an empty cached "no releases" result is never served or saved', async () =
   assert.match(text, /persistedDetails\.groups\?\.length > 0 && Date\.now\(\)/, 'cached empty results must count as a miss');
   const write = text.split('movieTorrentDetailsCacheRef.current.set(cacheKey, { groups, savedAt')[0].trimEnd();
   assert.ok(write.endsWith('if (groups.length > 0) {'), 'only non-empty results may be written to the cache');
+});
+
+test('Nuvio HD lookups only start from the movie card that was opened', async () => {
+  const callers = [];
+  for (const file of await sourceFiles(SRC)) {
+    const text = await readFile(file, 'utf8');
+    if (/\.getNuvioStreams\s*\(/.test(text)) callers.push(rel(file));
+  }
+  assert.deepEqual(callers, ['components/MovieActionCard.tsx']);
 });

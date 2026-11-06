@@ -29,6 +29,7 @@ SEED_DIR = Path(__file__).resolve().parents[1] / "cache-seed"
 SCHEMA_VERSION = 2
 MAX_RESULTS = 12
 MAX_TV_RESULTS = 40   # a series has season packs and several qualities per season
+MAX_LARGE_RESULTS = 10  # releases ABOVE the size window, offered to Webtor instead of Seedr
 MEDIA = ("movie", "tv")
 
 
@@ -114,6 +115,7 @@ def lookup(
     media: str = "movie",
     min_size: int | None = None,
     max_size: int | None = None,
+    only_large: bool = False,
 ) -> list[dict[str, Any]]:
     """Return ready-to-use release rows for one movie or series, best seeded first.
 
@@ -124,6 +126,9 @@ def lookup(
     (TORRENT_MIN_SIZE_MB / TORRENT_MAX_SIZE_GB). The files keep a wider range than any window
     you are likely to set, so the window is applied here, before the result cap, and a larger
     setting simply reveals more of what is already stored.
+
+    ``only_large=True`` (movies) returns the opposite set: only releases ABOVE ``max_size``, at most
+    MAX_LARGE_RESULTS. Those are too big for Seedr, so the card offers them through Webtor.
 
     Matches by TMDB id first, then by normalised title + year. ``sections=None`` searches
     all nine files and merges what they know about the title (a film can sit in several
@@ -150,7 +155,10 @@ def lookup(
                 continue
             if media == "movie":
                 size = release.get("size") or 0
-                if (min_size is not None and size < min_size) or (max_size is not None and size > max_size):
+                if only_large:
+                    if max_size is None or size <= max_size:
+                        continue
+                elif (min_size is not None and size < min_size) or (max_size is not None and size > max_size):
                     continue
             row = {
                 "guid": digest,
@@ -178,7 +186,7 @@ def lookup(
             r["scope"] != "complete", r["season"], -r["seeders"], -r["leechers"], r["infoHash"]))
         return rows[:MAX_TV_RESULTS]
     rows = sorted(merged.values(), key=lambda r: (-r["seeders"], -r["leechers"], r["infoHash"]))
-    return rows[:MAX_RESULTS]
+    return rows[:(MAX_LARGE_RESULTS if only_large else MAX_RESULTS)]
 
 
 def clear_memory_cache() -> None:
@@ -186,4 +194,4 @@ def clear_memory_cache() -> None:
     _INDEXES.clear()
 
 
-__all__ = ["MAX_TV_RESULTS", "SECTIONS", "SEED_DIR", "build_magnet", "clear_memory_cache", "lookup", "normalize_title"]
+__all__ = ["MAX_LARGE_RESULTS", "MAX_TV_RESULTS", "SECTIONS", "SEED_DIR", "build_magnet", "clear_memory_cache", "lookup", "normalize_title"]
