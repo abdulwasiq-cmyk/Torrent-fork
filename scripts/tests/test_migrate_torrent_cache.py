@@ -122,10 +122,10 @@ def test_committed_torrent_files_are_valid_small_and_match_their_section_rows():
             # The shared section file also contains TV season/complete-series packs. Those are
             # intentionally discovered with the movie size window disabled (see build_tv_torrent_cache.py),
             # so the declared cache limits apply only to movie lookup entries.
-            if key.startswith("movie:"):
+            if key.startswith("tv:"):
+                assert all(r["size"] > 0 for r in entry["releases"])
+            else:   # "movie:<id>", and "ty:<title>|<year>" for a movie without a TMDB id
                 assert all(doc["limits"]["minSizeBytes"] <= r["size"] <= doc["limits"]["maxSizeBytes"] for r in entry["releases"])
-            else:
-                assert key.startswith("tv:") and all(r["size"] > 0 for r in entry["releases"])
         # torrent data must never leak back into the fast metadata files
         for field in ("magnetUrl", "infoHash", "torrentMatches", "downloadUrl"):
             assert field not in metadata_text(section), f"{section}.json must not contain {field}"
