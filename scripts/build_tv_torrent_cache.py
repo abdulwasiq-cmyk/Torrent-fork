@@ -68,11 +68,31 @@ def year_of(value: object) -> str:
     return match.group(1) if match else ""
 
 
+# What may follow the show's name in a pack's release name. Anything else (a word like "and", "the", "vs")
+# means the release is a LONGER title, e.g. "Wolverine and the X-Men" is not a pack of "Wolverine".
+BOUNDARY = re.compile(
+    r"^(?:s\d{1,2}|seasons?|complete|full|series|collection|pack|(?:19|20)\d{2}|\d{3,4}p|4k|8k|uhd|us|uk|web|webrip|dl|rip|"
+    r"bluray|bdrip|brrip|hdtv|dvdrip|x264|x265|h264|h265|hevc|amzn|dsnp|nf|hmax|atvp|hdr|dv|multi|dual|hindi|english|eng)$"
+)
+
+
+def names_the_show(release_title: str, show_title: str) -> bool:
+    """The show's name appears as a whole phrase and is followed by a season/year/quality marker (or the end)."""
+    show, tokens = normalize_title(show_title).split(), normalize_title(release_title).split()
+    if not show:
+        return False
+    for start in range(len(tokens) - len(show) + 1):
+        if tokens[start:start + len(show)] == show:
+            end = start + len(show)
+            if end == len(tokens) or BOUNDARY.match(tokens[end]):
+                return True
+    return False
+
+
 def classify(release_title: str, show_title: str) -> tuple[str, int] | None:
     """('complete', 0) / ('season', N) for a season or complete-series pack of this show, else None."""
     title = str(release_title or "")
-    show = normalize_title(show_title)
-    if not show or f" {show} " not in f" {normalize_title(title)} ":
+    if not names_the_show(title, show_title):
         return None
     if BAD_QUALITY.search(title) or EPISODE.search(title):
         return None
@@ -190,7 +210,9 @@ async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=Non
         rows = await searcher(query)
         hits = [r for r in rows if classify(r.get("title"), title) == wanted]
         log(query, len(rows), len(hits), [r.get("title") for r in rows if r not in hits][:3])
-        seen.extend(rows)
+        # Keep only what this query was asking for. A "<title> complete" search also returns single
+        # seasons of unrelated shows and stray seasons ("S07"), which must not become entries.
+        seen.extend(r for r in rows if classify(r.get("title"), title) in {wanted, ("complete", 0)})
         return len(hits)
 
     await ask(f"{title} complete", ("complete", 0))

@@ -92,3 +92,26 @@ def test_resolution_variety_beats_raw_seeders():
     kept = B.select_releases(rows, "Show", per_bucket=4)
     assert {B.resolution_of(r["title"]) for r in kept} == {"720p", "1080p", "2160p"}
     assert len(kept) == 4
+
+
+def test_a_longer_title_is_not_a_pack_of_the_shorter_show():
+    assert B.classify("Wolverine and the X-Men S01 1080p", "Wolverine") is None
+    assert B.classify("Wolverine S01 1080p", "Wolverine") == ("season", 1)
+    assert B.classify("Spider-Man The Animated Series S01 1080p", "Spider-Man") is None
+    assert B.classify("The.Falcon.And.The.Winter.Soldier.S01.COMPLETE.2160p", "The Falcon and the Winter Soldier") == ("season", 1)
+    assert B.classify("Marvels Daredevil S02 1080p BluRay", "Daredevil") == ("season", 2)      # words BEFORE the title are fine
+    assert B.classify("Hawkeye 2021 S01 1080p", "Hawkeye") == ("season", 1)
+    assert B.classify("Loki Complete Series 1080p", "Loki") == ("complete", 0)
+    assert B.classify("Tehran S01 Complete 720p - LOKiHD", "Loki") is None
+
+
+def test_discover_keeps_only_what_each_query_asked_for():
+    async def searcher(query):
+        if query == "Show complete":
+            return [cand("Show S07 1080p", 50, "1"), cand("Show Complete Series 1080p", 5, "2")]   # stray S07 must not be kept
+        if query == "Show S01":
+            return [cand("Show S01 1080p", 9, "3"), cand("Show S03 1080p", 8, "4")]
+        return []
+
+    kept = B.select_releases(asyncio.run(B.discover("Show", searcher)), "Show")
+    assert [(r["scope"], r["season"]) for r in kept] == [("complete", 0), ("season", 1)]
