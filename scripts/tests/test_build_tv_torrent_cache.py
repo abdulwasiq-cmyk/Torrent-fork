@@ -154,3 +154,46 @@ def test_excluded_series_file_matches_real_series_and_is_removed_on_merge(tmp_pa
     merged = B.merge_section(existing, {}, "x", "now", replace_keys={"tv:2"})
     assert set(merged["titles"]) == {"tv:1"}
     assert B.load_excluded(tmp_path / "missing.json") == set()
+
+
+def test_year_decides_between_same_name_shows():
+    # The Flash (2014) is the NEWEST of its name: a bare "The Flash S01" means it, a written 1990 does not.
+    assert B.classify("The.Flash.2014.S01.1080p.BluRay", "The Flash", year=2014) == ("season", 1)
+    assert B.classify("The Flash S01 1080p", "The Flash", year=2014) == ("season", 1)
+    assert B.classify("The.Flash.1990.S01.DVDRip", "The Flash", year=2014) is None
+    # The Flash (1990) is an OLDER namesake: it needs its year, a bare name is taken to be the newer show.
+    assert B.classify("The.Flash.1990.S01.DVDRip", "The Flash", year=1990, require_year=True) == ("season", 1)
+    assert B.classify("The Flash S01 1080p", "The Flash", year=1990, require_year=True) is None
+    assert B.classify("The.Flash.2014.S01.1080p", "The Flash", year=1990, require_year=True) is None
+    # one year either side is tolerated; a year after the season describes the season, not the show
+    assert B.classify("Lucifer 2015 S02 1080p", "Lucifer", year=2016) == ("season", 2)
+    assert B.classify("Lucifer 2005 S02 1080p", "Lucifer", year=2016) is None
+    assert B.classify("Reacher S02 2023 1080p", "Reacher", year=2022) == ("season", 2)
+    assert B.classify("Swamp Thing 2019 S01 2160p", "Swamp Thing", year=2019) == ("season", 1)
+    assert B.classify("Swamp Thing 1990 S01", "Swamp Thing", year=2019) is None
+
+
+def test_older_namesakes_are_found_from_the_catalogue():
+    older = B.older_namesakes(B.all_tv_rows(B.SEED_DIR))
+    by_key = {f"tv:{r.get('tmdbId') or r.get('id')}": r for r in B.all_tv_rows(B.SEED_DIR)}
+    flash = {k: r["year"] for k, r in by_key.items() if r["title"] == "The Flash"}
+    swamp = {k: r["year"] for k, r in by_key.items() if r["title"] == "Swamp Thing"}
+    assert {k for k, y in flash.items() if y == 1990} <= older and not {k for k, y in flash.items() if y == 2014} & older
+    assert {k for k, y in swamp.items() if y == 1990} <= older and not {k for k, y in swamp.items() if y == 2019} & older
+    rows = [{"id": 1, "title": "X", "year": 2000}, {"id": 2, "title": "X", "year": 2001}, {"id": 3, "title": "X", "year": 2015}]
+    assert B.older_namesakes(rows) == {"tv:1", "tv:2"}
+    assert B.older_namesakes([{"id": 5, "title": "Solo", "year": 2020}]) == set()
+
+
+def test_older_namesakes_are_searched_with_their_year():
+    asked = []
+
+    async def searcher(query):
+        asked.append(query)
+        return []
+
+    asyncio.run(B.discover("The Flash", searcher, year=1990, require_year=True))
+    assert asked[:2] == ["The Flash 1990 complete", "The Flash 1990 S01"]
+    asked.clear()
+    asyncio.run(B.discover("The Flash", searcher, year=2014))
+    assert asked[:2] == ["The Flash complete", "The Flash S01"]

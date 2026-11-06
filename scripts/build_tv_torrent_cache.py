@@ -77,23 +77,43 @@ BOUNDARY = re.compile(
 )
 
 
-def names_the_show(release_title: str, show_title: str) -> bool:
-    """The show's name appears as a whole phrase and is followed by a season/year/quality marker (or the end)."""
+YEAR_TOKEN = re.compile(r"^(?:19|20)\d{2}$")
+
+
+def names_the_show(release_title: str, show_title: str, year: int | str | None = None, require_year: bool = False) -> bool:
+    """The show's name appears as a whole phrase and is followed by a season/year/quality marker (or the end).
+
+    Year handling (many shows share a name, e.g. The Flash 1990 / 2014):
+      * a year written right after the name must be the show's first-air year (+/- 1), otherwise it is another show;
+      * with ``require_year`` (an OLDER show whose name a newer show also uses) a release with no year is not accepted,
+        because a bare "The Flash S01" almost always means the newer one.
+    A year later in the name (after the season, "Reacher S02 2023") describes the season and is ignored.
+    """
     show, tokens = normalize_title(show_title).split(), normalize_title(release_title).split()
     if not show:
         return False
+    wanted = int(year) if str(year or "").isdigit() else None
     for start in range(len(tokens) - len(show) + 1):
-        if tokens[start:start + len(show)] == show:
-            end = start + len(show)
-            if end == len(tokens) or BOUNDARY.match(tokens[end]):
+        if tokens[start:start + len(show)] != show:
+            continue
+        end = start + len(show)
+        if end < len(tokens) and not BOUNDARY.match(tokens[end]):
+            continue
+        written = int(tokens[end]) if end < len(tokens) and YEAR_TOKEN.match(tokens[end]) else None
+        if written is not None and wanted is not None:
+            if abs(written - wanted) <= 1:
                 return True
+            continue
+        if written is None and require_year and wanted is not None:
+            continue
+        return True
     return False
 
 
-def classify(release_title: str, show_title: str) -> tuple[str, int] | None:
+def classify(release_title: str, show_title: str, year: int | str | None = None, require_year: bool = False) -> tuple[str, int] | None:
     """('complete', 0) / ('season', N) for a season or complete-series pack of this show, else None."""
     title = str(release_title or "")
-    if not names_the_show(title, show_title):
+    if not names_the_show(title, show_title, year, require_year):
         return None
     if BAD_QUALITY.search(title) or EPISODE.search(title):
         return None
@@ -108,13 +128,30 @@ def classify(release_title: str, show_title: str) -> tuple[str, int] | None:
     return None
 
 
+def older_namesakes(rows: list[dict]) -> set[str]:
+    """"tv:<id>" of every series that has a NEWER series with the same name (years more than a year apart).
+
+    Those need the year in a release's name: a bare "The Flash S01" is taken to be the newest "The Flash"."""
+    by_name: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for row in rows:
+        year = year_of(row.get("year") or row.get("releaseDate"))
+        if year:
+            by_name[normalize_title(row.get("title"))].append((int(year), f"tv:{row.get('tmdbId') or row.get('id')}"))
+    older: set[str] = set()
+    for entries in by_name.values():
+        newest = max(year for year, _ in entries)
+        older.update(key for year, key in entries if newest - year > 1)
+    return older
+
+
 def resolution_of(title: str) -> str:
     match = RESOLUTION.search(title or "")
     value = match.group(1).lower() if match else "other"
     return {"4k": "2160p", "8k": "2160p", "1440p": "1080p", "576p": "480p"}.get(value, value)
 
 
-def select_releases(candidates: list[dict], show_title: str, per_bucket: int = PER_BUCKET, cap: int = MAX_PER_SHOW) -> list[dict]:
+def select_releases(candidates: list[dict], show_title: str, per_bucket: int = PER_BUCKET, cap: int = MAX_PER_SHOW,
+                    year: int | str | None = None, require_year: bool = False) -> list[dict]:
     """Per season (and per 'complete'): the best-seeded pack of each resolution, then the next best
     seeded up to ``per_bucket``. Distinct by info hash, capped per show.
 
@@ -127,7 +164,7 @@ def select_releases(candidates: list[dict], show_title: str, per_bucket: int = P
         digest = str(item.get("infoHash") or "").lower()
         if not HEX40.match(digest) or digest in seen:
             continue
-        scope = classify(item.get("title"), show_title)
+        scope = classify(item.get("title"), show_title, year, require_year)
         if scope is None:
             continue
         seen.add(digest)
@@ -169,6 +206,16 @@ def tv_rows(section_document: dict) -> list[dict]:
     return list(rows.values())
 
 
+def all_tv_rows(seed_dir: Path) -> list[dict]:
+    """Every series row of the nine section files (a series in several sections appears once per section)."""
+    rows: list[dict] = []
+    for section in SECTIONS:
+        path = seed_dir / f"{section}.json"
+        if path.is_file():
+            rows.extend(tv_rows(json.loads(path.read_text(encoding="utf-8"))))
+    return rows
+
+
 def load_excluded(path: Path = EXCLUDE_FILE) -> set[str]:
     """TMDB ids of series that get no torrent entry (scripts/tv_torrent_exclude.json), as "tv:<id>" keys."""
     try:
@@ -206,7 +253,8 @@ MAX_SEASONS = 15
 Searcher = "Callable[[str], Awaitable[list[dict]]]"
 
 
-async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=None) -> list[dict]:
+async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=None,
+                   year: int | str | None = None, require_year: bool = False) -> list[dict]:
     """Find packs for one show with targeted queries, so a long-running show's early seasons are
     not buried under thousands of episode torrents.
 
@@ -221,30 +269,34 @@ async def discover(title: str, searcher, max_seasons: int = MAX_SEASONS, log=Non
     best_season = 0
     log = log or (lambda *_: None)
 
+    # An older show whose name a newer one also uses is searched together with its year, so the 150 results
+    # are not mostly the newer show's releases.
+    name = f"{title} {year_of(year)}" if require_year and year_of(year) else title
+
     async def ask(query: str, wanted) -> int:
         rows = await searcher(query)
-        hits = [r for r in rows if classify(r.get("title"), title) == wanted]
+        hits = [r for r in rows if classify(r.get("title"), title, year, require_year) == wanted]
         log(query, len(rows), len(hits), [r.get("title") for r in rows if r not in hits][:3])
         # Keep only what this query was asking for. A "<title> complete" search also returns single
         # seasons of unrelated shows and stray seasons ("S07"), which must not become entries.
-        scopes = [(r, classify(r.get("title"), title)) for r in rows]
+        scopes = [(r, classify(r.get("title"), title, year, require_year)) for r in rows]
         seen.extend(r for r, scope in scopes if scope in {wanted, ("complete", 0)})
         if wanted == ("complete", 0):
             strays.extend(r for r, scope in scopes if scope and scope[0] == "season")
         return len(hits)
 
-    await ask(f"{title} complete", ("complete", 0))
+    await ask(f"{name} complete", ("complete", 0))
     misses = 0
     for number in range(1, max_seasons + 1):
         wanted = ("season", number)
-        found = await ask(f"{title} S{number:02d}", wanted) or await ask(f"{title} Season {number}", wanted)
+        found = await ask(f"{name} S{number:02d}", wanted) or await ask(f"{name} Season {number}", wanted)
         misses = 0 if found else misses + 1
         best_season = number if found else best_season
         if misses >= 2:
             break
     # A season the per-season queries missed (Agents of S.H.I.E.L.D. S06) is still valid when it lies inside the range
     # they found; one beyond it (a stray "S07" for a 3-season show) is dropped.
-    seen.extend(r for r in strays if classify(r.get("title"), title)[1] <= best_season)
+    seen.extend(r for r in strays if classify(r.get("title"), title, year, require_year)[1] <= best_season)
     return seen
 
 
@@ -290,6 +342,7 @@ async def run(args: argparse.Namespace) -> int:
         existing = json.loads(target.read_text(encoding="utf-8"))
         rows = tv_rows(json.loads(metadata_path.read_text(encoding="utf-8")))
         excluded = load_excluded()
+        older = older_namesakes(all_tv_rows(args.seed_dir))
         rows = [r for r in rows if f"tv:{str(r.get('tmdbId') or r.get('id'))}" not in excluded]
         todo = [r for r in rows if args.refresh or f"tv:{str(r.get('tmdbId') or r.get('id'))}" not in existing.get("titles", {})]
         if args.limit:
@@ -302,10 +355,12 @@ async def run(args: argparse.Namespace) -> int:
                 log = (lambda query, raw, hits, others: lines.append(
                     f"      {query!r}: {raw} results, {hits} packs" + (f"; e.g. {others}" if args.debug and others else ""))) \
                     if args.debug else None
-                candidates = await discover(str(show["title"]), searcher, log=log)
-                chosen = select_releases(candidates, str(show["title"]))
+                year = year_of(show.get("year") or show.get("releaseDate"))
+                require_year = f"tv:{show.get('tmdbId') or show.get('id')}" in older
+                candidates = await discover(str(show["title"]), searcher, log=log, year=year, require_year=require_year)
+                chosen = select_releases(candidates, str(show["title"]), year=year, require_year=require_year)
                 seasons = sorted({r["season"] for r in chosen if r["scope"] == "season"})
-                print(f"  {section} {index}/{len(todo)} {show['title']!r}: {len(chosen)} packs"
+                print(f"  {section} {index}/{len(todo)} {show['title']!r} ({year}{', older namesake: year required' if require_year else ''}): {len(chosen)} packs"
                       + (f" (complete: {any(r['scope'] == 'complete' for r in chosen)}, seasons: {seasons})" if chosen else ""))
                 for line in lines:
                     print(line)
