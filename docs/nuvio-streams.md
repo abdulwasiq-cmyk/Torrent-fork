@@ -50,17 +50,10 @@ Do not expose port 7777 to the internet: keep it closed in the Oracle security l
 
 ## 2. Point the app at it
 
-The app runs in Docker, so `localhost` inside the container is not the VPS. Add to the service in
-`docker-compose.yml` on the VPS (this repo's compose file is deliberately not changed, the VPS has local edits):
-
-```
-    environment:
-      NUVIO_URL: "http://host.docker.internal:7777"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-```
-
-then `docker compose up -d`. Check it from inside the container:
+The app runs in Docker, so `localhost` inside the container is not the VPS. `docker-compose.yml` therefore already
+sets `NUVIO_URL` to `http://host.docker.internal:7777` and maps `host.docker.internal` to the VPS
+(`extra_hosts`). After a deploy nothing more is needed; set `NUVIO_URL=` (empty) in the VPS `.env` to switch the
+button off. Check the container can reach the add-on:
 `docker exec torrent-studio python -c "import urllib.request;print(urllib.request.urlopen('http://host.docker.internal:7777/', timeout=5).status)"`.
 
 On Render leave `NUVIO_URL` unset (no button), or point it at a public address of the add-on that you have protected.

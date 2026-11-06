@@ -1,7 +1,8 @@
 import { api } from '../../../api/client.ts';
 import { formatBytes } from '../../../utils/formatters.ts';
 import { TvShowTile } from '../TvShowTile.tsx';
-import { MovieCompactCard, MoviePrepareCard, imdbTitleLink } from '../../MovieCards.tsx';
+import { MovieCompactCard, imdbTitleLink } from '../../MovieCards.tsx';
+import { MovieActionCard, torrentChip } from '../../MovieActionCard.tsx';
 import { compareReleaseDateDescending, episodeSeriesTitle, releaseDateSortValue, imdbRatingKey, normalizeGroupTitle, normalizeSavedOttTitle, searchMetadataForGroup, torrentQualityDetails, torrentResultKey } from '../grouping.ts';
 import { toCardProviders, uniqueOttProviders } from '../ottProviders.ts';
 import { normalizeTorrentTitleForNexStream } from '../nexstream.ts';
@@ -353,77 +354,18 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
               }
 
               const prepareState = prepareStateFor(result);
+              const playBusy = nexStreamResolvingId !== null || (nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title));
               return (
-                <MoviePrepareCard
+                <MovieActionCard
                   key={group.key || (group.title + '-' + index)}
-                  className="z-0"
-                  posterSrc={loadedSearchPosterUrl || lowQualityPosterUrl(sharedPosterUrl)}
-                  posterAlt={group.title}
-                  providers={toCardProviders(uniqueOttProviders(
-                    (searchAvailabilityByGroup[group.key]?.matches || [])
-                      .filter(match => Array.isArray(match.providers) && match.providers.length > 0 &&
-                        normalizeSavedOttTitle(String(match.title || '')) === normalizeSavedOttTitle(episodeSeriesTitle(group.title) || group.title))
-                      .flatMap(match => match.providers)
-                  ))}
-                  onPosterClick={() => setExpandedSearchGroupKey(null)}
-                  onPosterLoad={event => {
-                    const key = posterKeyFor(posterResult);
-                    searchPosterUrlsRef.current[key] = event.currentTarget.currentSrc || event.currentTarget.src;
-                    posterLoadedRef.current.add(key);
-                    event.currentTarget.style.display = '';
-                    event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.add('hidden');
-                  }}
-                  onPosterError={event => {
-                    const key = posterKeyFor(posterResult);
-                    delete searchPosterUrlsRef.current[key];
-                    posterLoadedRef.current.delete(key);
-                    setMetadataPosterFailed(previous => previous[key] ? previous : { ...previous, [key]: true });
-                    event.currentTarget.style.display = 'none';
-                    event.currentTarget.parentElement?.querySelector('[data-poster-placeholder="true"]')?.classList.remove('hidden');
-
-                    if (
-                      !posterBackgroundQueuedRef.current.has(key) &&
-                      !posterOverrides[key]
-                    ) {
-                      posterBackgroundQueuedRef.current.add(key);
-                      posterBackgroundQueueRef.current.unshift({ key, result: posterResult });
-                      startPosterBackgroundWorkers();
-                    }
-                  }}
-                  imdb={displayImdbRating}
-                  seeders={result.seeders}
-                  indexer={result.indexer}
-                  quality={extractedQuality(result)}
                   title={mediaDisplayTitle}
                   titleHref={imdbTitleHref}
                   year={mediaMetadata?.year || group.year}
+                  tmdbId={mediaMetadata?.tmdbId || mediaMetadata?.id || posterResult?.tmdbId || posterResult?.id}
                   onClose={() => setExpandedSearchGroupKey(null)}
-                  variants={group.variants.map(variant => {
-                    const quality = torrentQualityDetails(variant);
-                    const provider = String(variant.indexer || '').trim();
-                    const size = formatBytes(Number(variant.size) || 0);
-                    const seeds = Number(variant.seeders) || 0;
-                    return {
-                      key: torrentResultKey(variant),
-                      label: `${quality.label} · ${size} · ▲${seeds}${provider ? ` · ${provider}` : ''}`,
-                    };
-                  })}
-                  selectedVariantKey={torrentResultKey(result)}
-                  onSelectVariant={key => setSelectedQualityByGroup(previous => ({ ...previous, [group.key]: key }))}
-                  variantsAriaLabel={`Choose quality for ${group.title}`}
-                  prepared={prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
-                  prepare={{
-                    isPreparing: prepareState.isPreparing,
-                    disabled: !prepareState.source || prepareState.isPreparing,
-                    onClick: () => void prepareMovieTorrent(result),
-                  }}
-                  directStream={{
-                    disabled: nexStreamResolvingId !== null || (nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)),
-                    label: nexStreamResolvingId !== null
-                      ? 'Resolving…'
-                      : nexStreamLoading && normalizeGroupTitle(nexStreamLoadingTitle) === normalizeGroupTitle(mediaDisplayTitle || group.title)
-                        ? 'Searching…'
-                        : 'Direct Stream',
+                  play={{
+                    disabled: playBusy,
+                    resolving: playBusy,
                     onClick: () => {
                       if (titleMatches.length > 0) {
                         void playWithNexStream(titleMatches[0]);
@@ -444,6 +386,15 @@ export function SearchResultsSection({ vm }: { vm: PanelModel }) {
                       }
                     },
                   }}
+                  prepare={{
+                    chips: group.variants.map(torrentChip),
+                    selectedKey: torrentResultKey(result),
+                    onSelect: key => setSelectedQualityByGroup(previous => ({ ...previous, [group.key]: key })),
+                    isPreparing: prepareState.isPreparing,
+                    disabled: !prepareState.source || prepareState.isPreparing,
+                    onClick: () => void prepareMovieTorrent(result),
+                  }}
+                  prepared={prepareState.primaryFile ? preparedActionsFor(prepareState.torrentKey, prepareState.primaryFile) : null}
                 />
               );
             })}

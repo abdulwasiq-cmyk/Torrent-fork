@@ -19,6 +19,13 @@ services:
       MDBLIST_API_KEY: "${MDBLIST_API_KEY:-}"
       SEEDR_SESSION_SECRET: "${SEEDR_SESSION_SECRET:?Set SEEDR_SESSION_SECRET in .env}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
+      # Movie torrent size window for the Prepare card (empty = search_limits.json defaults; Webtor takes the larger ones)
+      TORRENT_MIN_SIZE_MB: "${TORRENT_MIN_SIZE_MB:-}"
+      TORRENT_MAX_SIZE_GB: "${TORRENT_MAX_SIZE_GB:-}"
+      # Nuvio Streams add-on running on this VPS (docs/nuvio-streams.md); set NUVIO_URL= empty to hide Download HD
+      NUVIO_URL: "${NUVIO_URL-http://host.docker.internal:7777}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - torrent_studio_data:/app/data
     healthcheck:
